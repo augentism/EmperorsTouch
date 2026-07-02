@@ -8,7 +8,7 @@
 
     Adding a hook:
       1. Add a descriptor to HOOKS below.
-      2. For an event hook, wire a mod:hook that calls mod:dispatch_hook(id).
+      2. For an event hook, wire a mod:hook_safe that calls mod:dispatch_hook(id).
          For a poll hook, give it a poll() function.
     Nothing in dispatch.lua needs to change.
 --]]
@@ -68,6 +68,20 @@ local HOOKS = {
         -- preset option if "stronger when hurt" is wanted.
         poll              = function() return local_health_fraction() end,
     },
+    {
+        id                = "on_victory",
+        name              = "Mission Victory",
+        kind              = "event",
+        cooldown          = 10,
+        supported_actions = { "Vibrate", "Rotate", "Pump" },
+    },
+    {
+        id                = "on_defeat",
+        name              = "Mission Defeat",
+        kind              = "event",
+        cooldown          = 10,
+        supported_actions = { "Vibrate", "Rotate", "Pump" },
+    },
 }
 
 local HOOKS_BY_ID = {}
@@ -90,9 +104,30 @@ end
 -- Each game hook simply calls mod:dispatch_hook(id); dispatch handles
 -- debounce, grouping, and sending.
 
-mod:hook_safe(CLASS.AttackReportManager, "add_attack_result", function(func, self, damage_profile, attacked_unit, attacking_unit, ...)
+-- hook_safe callbacks receive the original arguments directly (no `func`
+-- first parameter — that is only for mod:hook).
+mod:hook_safe(CLASS.AttackReportManager, "add_attack_result", function(self, damage_profile, attacked_unit, attacking_unit, ...)
     local ok, hit_me = pcall(is_local_player, attacked_unit)
     if ok and hit_me then
         mod:dispatch_hook("on_damage_taken")
     end
+end)
+
+-- Mission outcome. _set_end_conditions_met runs on the server directly and
+-- on clients via rpc_game_mode_end_conditions_met, so hooking the method
+-- itself covers both host and client. Outcomes: "won" | "lost" | "n/a".
+mod:hook_safe(CLASS.GameModeManager, "_set_end_conditions_met", function(self, outcome)
+    if outcome == "won" then
+        mod:dispatch_hook("on_victory")
+    elseif outcome == "lost" then
+        mod:dispatch_hook("on_defeat")
+    end
+end)
+
+-- Leaving the mission state: halt everything so a Duration=0 (continuous)
+-- preset can't keep running into the end screen / hub, and reset dispatch
+-- debounce state for the next mission.
+mod:hook_safe(CLASS.StateGameplay, "on_exit", function()
+    mod:reset_dispatch()
+    mod:send_toy_command(mod:make_stop_command())
 end)

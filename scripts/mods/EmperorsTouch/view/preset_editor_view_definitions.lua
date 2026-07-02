@@ -15,13 +15,17 @@ local grid_height     = grid_size[2]
 local blur_edge       = _s.grid_blur_edge_size
 local mask_size       = { grid_width + blur_edge[1] * 2, grid_height + blur_edge[2] * 2 }
 
--- Right editing panel geometry
+-- Right editing panel geometry (slider size must match the blueprints file)
+-- Sliders are laid out in two columns, column-major (1-6 left, 7-12 right).
 local PANEL_X       = 700
 local PANEL_TOP     = 250
-local STEPPER_W     = 400
-local STEPPER_H     = 56
-local STEPPER_GAP   = 8
-local NUM_STEPPERS  = 6
+local STEPPER_W     = 440
+local STEPPER_H     = 44
+local STEPPER_GAP   = 6
+local NUM_STEPPERS  = 12
+local COLUMN_ROWS   = 6
+local COLUMN_GAP    = 60
+local ROW_PITCH     = STEPPER_H + STEPPER_GAP
 
 local scenegraph_definition = {
     screen = UIWorkspaceSettings.screen,
@@ -111,18 +115,41 @@ local scenegraph_definition = {
         parent               = "screen",
         horizontal_alignment = "left",
         size                 = { 220, 44 },
-        position             = { PANEL_X, PANEL_TOP + NUM_STEPPERS * (STEPPER_H + STEPPER_GAP) + 12, 2 },
+        position             = { PANEL_X, PANEL_TOP + COLUMN_ROWS * ROW_PITCH + 24, 2 },
+    },
+
+    test_button = {
+        vertical_alignment   = "top",
+        parent               = "screen",
+        horizontal_alignment = "left",
+        size                 = { 220, 44 },
+        position             = { PANEL_X + STEPPER_W + COLUMN_GAP, PANEL_TOP + COLUMN_ROWS * ROW_PITCH + 24, 2 },
+    },
+
+    -- Dropdown widget is created dynamically (see view on_enter)
+    test_toy_selector = {
+        vertical_alignment   = "top",
+        parent               = "screen",
+        horizontal_alignment = "left",
+        size                 = { 440, 44 },
+        position             = { PANEL_X + STEPPER_W + COLUMN_GAP + 240, PANEL_TOP + COLUMN_ROWS * ROW_PITCH + 24, 2 },
     },
 }
 
--- Stepper node per editable field
+-- Stepper node per editable field: two columns, column-major
 for i = 1, NUM_STEPPERS do
+    local col = math.floor((i - 1) / COLUMN_ROWS)   -- 0 or 1
+    local row = (i - 1) % COLUMN_ROWS
     scenegraph_definition["stepper_" .. i] = {
         vertical_alignment   = "top",
         parent               = "screen",
         horizontal_alignment = "left",
         size                 = { STEPPER_W, STEPPER_H },
-        position             = { PANEL_X, PANEL_TOP + (i - 1) * (STEPPER_H + STEPPER_GAP), 2 },
+        position             = {
+            PANEL_X + col * (STEPPER_W + COLUMN_GAP),
+            PANEL_TOP + row * ROW_PITCH,
+            2,
+        },
     }
 end
 
@@ -151,6 +178,10 @@ local widget_definitions = {
 
     delete_button = UIWidget.create_definition(
         table.clone(ButtonPassTemplates.default_button), "delete_button", { original_text = "Delete Preset" }
+    ),
+
+    test_button = UIWidget.create_definition(
+        table.clone(ButtonPassTemplates.default_button), "test_button", { original_text = "Test Preset" }
     ),
 
     selected_label = UIWidget.create_definition({

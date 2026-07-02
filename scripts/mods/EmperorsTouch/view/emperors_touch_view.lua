@@ -13,9 +13,13 @@ local UIWidget               = mod:original_require("scripts/managers/ui/ui_widg
 local UIWidgetGrid           = mod:original_require("scripts/ui/widget_logic/ui_widget_grid")
 local ViewElementInputLegend = mod:original_require("scripts/ui/view_elements/view_element_input_legend/view_element_input_legend")
 
+local DropdownHelper = mod:io_dofile("EmperorsTouch/scripts/mods/EmperorsTouch/view/dropdown_helper")
+
 local VIEW_NAME = "emperors_touch_view"
 
 local EmperorsTouchView = class("EmperorsTouchView", "BaseView")
+
+DropdownHelper.install(EmperorsTouchView)
 
 -- ===== Helpers =====
 
@@ -136,27 +140,21 @@ EmperorsTouchView._show_message = function(self, text)
     self._entry_widgets = { widget }
 end
 
--- Builds the ordered cycle of preset choices ({ id, name }), None first.
-EmperorsTouchView._build_preset_cycle = function(self)
+-- Dropdown option list of presets, "None" first.
+EmperorsTouchView._preset_options = function(self)
     local presets = mod:get_presets()
-    self._presets_by_id = presets
 
-    local cycle = { { id = nil, name = "None" } }
     local ordered = {}
     for id, p in pairs(presets) do
         ordered[#ordered + 1] = { id = id, name = p.name or "Preset" }
     end
     table.sort(ordered, function(a, b) return a.name < b.name end)
-    for _, item in ipairs(ordered) do
-        cycle[#cycle + 1] = item
-    end
-    self._cycle = cycle
-end
 
-local function preset_name(presets, id)
-    if not id then return "None" end
-    local p = presets[id]
-    return p and (p.name or "Preset") or "None"
+    local options = { { id = "__none", display_name = "None", ignore_localization = true } }
+    for _, item in ipairs(ordered) do
+        options[#options + 1] = { id = item.id, display_name = item.name, ignore_localization = true }
+    end
+    return options
 end
 
 EmperorsTouchView._populate_toys = function(self, toys)
@@ -167,8 +165,6 @@ EmperorsTouchView._populate_toys = function(self, toys)
         self:_show_message("No toys found.")
         return
     end
-
-    self:_build_preset_cycle()
 
     local entries = {}
     for _, toy in ipairs(toys) do
@@ -256,6 +252,8 @@ end
 -- ===== Right-side hook panel =====
 
 EmperorsTouchView._clear_hook_panel = function(self)
+    self:close_focused_dropdown()
+
     for _, w in ipairs(self._hook_panel_widgets or {}) do
         for i = #self._widgets, 1, -1 do
             if self._widgets[i] == w then
@@ -276,8 +274,8 @@ end
 EmperorsTouchView._build_hook_panel = function(self, toy)
     self:_clear_hook_panel()
 
-    self:_build_preset_cycle()
-    local assignments = mod:get_assignments()
+    -- Cached copy so dropdown get_functions don't clone settings every frame
+    self._assign_cache = mod:get_assignments()
 
     local title = self._widgets_by_name.hook_panel_title
     if title then
@@ -286,44 +284,34 @@ EmperorsTouchView._build_hook_panel = function(self, toy)
         title.content.text = "Hooks — " .. name
     end
 
-    local template = self._blueprints.hook_selector
-    local ROW_H    = 48
-    local def      = UIWidget.create_definition(template.pass_template, "hook_panel", nil, { 500, 42 })
+    local ROW_H  = 52
+    local toy_id = toy.id
 
     for i, hook in ipairs(mod.HOOKS or {}) do
-        local current_id = assignments[hook.id] and assignments[hook.id][toy.id]
+        local hook_id = hook.id
         local entry = {
-            hook_id           = hook.id,
-            hook_name         = hook.name,
-            toy_id            = toy.id,
-            current_preset_id = current_id,
-            title             = hook.name .. ":  " .. preset_name(self._presets_by_id, current_id),
+            header_text = hook.name,
+            size        = { 960, 44 },   -- label gets 960 - value_width; wide enough for long hook names
+            value_width = 320,
+            options     = self:_preset_options(),
+            get_function = function()
+                local by_toy = self._assign_cache[hook_id]
+                return by_toy and by_toy[toy_id] or "__none"
+            end,
+            on_activated = function(new_id)
+                local preset_id = new_id ~= "__none" and new_id or nil
+                self._assign_cache[hook_id] = self._assign_cache[hook_id] or {}
+                self._assign_cache[hook_id][toy_id] = preset_id
+                mod:assign_preset(hook_id, toy_id, preset_id)
+            end,
         }
-        local widget = self:_create_widget("hook_panel_row_" .. i, def)
-        template.init(self, widget, entry, "cb_on_selector_pressed")
+
+        local widget = DropdownHelper.create(self, "hook_panel_row_" .. i, "hook_panel", entry)
         widget.offset = { 0, (i - 1) * ROW_H, 0 }
 
         self._widgets[#self._widgets + 1] = widget   -- drawn by BaseView
         self._hook_panel_widgets[#self._hook_panel_widgets + 1] = widget
     end
-end
-
--- Advance a toy+hook selector to the next preset (wraps through None).
-EmperorsTouchView.cb_on_selector_pressed = function(self, widget, entry)
-    local cycle = self._cycle or { { id = nil, name = "None" } }
-
-    local idx = 1
-    for i, item in ipairs(cycle) do
-        if item.id == entry.current_preset_id then
-            idx = i
-            break
-        end
-    end
-    local next_item = cycle[(idx % #cycle) + 1]
-
-    entry.current_preset_id = next_item.id
-    mod:assign_preset(entry.hook_id, entry.toy_id, next_item.id)
-    widget.content.text = entry.hook_name .. ":  " .. next_item.name
 end
 
 EmperorsTouchView.cb_on_back_pressed = function(self)
@@ -344,20 +332,26 @@ EmperorsTouchView.update = function(self, dt, t, input_service)
             end
         end
     end
+    for _, widget in ipairs(self._hook_panel_widgets or {}) do
+        DropdownHelper.update(self, widget, input_service, dt, t)
+    end
+    DropdownHelper.handle_outside_click(self, input_service)
     return EmperorsTouchView.super.update(self, dt, t, input_service)
 end
 
 -- ===== Draw =====
 
 EmperorsTouchView.draw = function(self, dt, t, input_service, layer)
-    self:_draw_elements(dt, t, self._ui_renderer, self._render_settings, input_service)
+    DropdownHelper.draw_with_focus(self, dt, t, input_service, function(effective_input)
+        self:_draw_elements(dt, t, self._ui_renderer, self._render_settings, effective_input)
 
-    if self._entry_widgets and #self._entry_widgets > 0 then
-        local grid_interaction = self._widgets_by_name.grid_interaction
-        self:_draw_grid(self._entries_grid, self._entry_widgets, grid_interaction, dt, t, input_service)
-    end
+        if self._entry_widgets and #self._entry_widgets > 0 then
+            local grid_interaction = self._widgets_by_name.grid_interaction
+            self:_draw_grid(self._entries_grid, self._entry_widgets, grid_interaction, dt, t, effective_input)
+        end
 
-    EmperorsTouchView.super.draw(self, dt, t, input_service, layer)
+        EmperorsTouchView.super.draw(self, dt, t, effective_input, layer)
+    end)
 end
 
 EmperorsTouchView._draw_grid = function(self, grid, widgets, interaction_widget, dt, t, input_service)

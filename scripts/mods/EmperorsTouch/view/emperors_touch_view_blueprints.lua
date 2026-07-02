@@ -88,54 +88,6 @@ local blueprints = {
         end,
     },
 
-    -- Indented, single-line cycling assignment selector shown under a toy.
-    hook_selector = {
-        size = { grid_width, 42 },
-
-        pass_template = {
-            {
-                style_id   = "hotspot",
-                pass_type  = "hotspot",
-                content_id = "hotspot",
-                content    = { use_is_focused = true },
-                style      = hotspot_style,
-            },
-            {
-                pass_type = "texture",
-                style_id  = "highlight",
-                value     = "content/ui/materials/frames/hover",
-                style     = {
-                    hdr = true, scale_to_material = true,
-                    color = Color.ui_terminal(255, true), offset = { 0, 0, 3 }, size_addition = { 0, 0 },
-                },
-                change_function     = ButtonPassTemplates.list_button_highlight_change_function,
-                visibility_function = ButtonPassTemplates.list_button_focused_visibility_function,
-            },
-            {
-                pass_type = "text",
-                style_id  = "text",
-                value_id  = "text",
-                style     = {
-                    font_type                 = "proxima_nova_bold",
-                    font_size                 = 18,
-                    text_color                = { 255, 200, 200, 210 },
-                    text_horizontal_alignment = "left",
-                    text_vertical_alignment   = "center",
-                    offset                    = { 40, 0, 2 },
-                    size                      = { grid_width - 50, 42 },
-                },
-            },
-        },
-
-        init = function(parent, widget, entry, callback_name)
-            local content = widget.content
-            content.hotspot.pressed_callback = function()
-                callback(parent, callback_name, widget, entry)()
-            end
-            content.text  = entry.title
-            content.entry = entry
-        end,
-    },
 }
 
 return settings("EmperorsTouchViewBlueprints", blueprints)

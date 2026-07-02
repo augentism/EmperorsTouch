@@ -5,18 +5,34 @@ local UIFontSettings      = mod:original_require("scripts/managers/ui/ui_font_se
 local OptionsViewSettings = mod:original_require("scripts/ui/views/options_view/options_view_settings")
 local ButtonPassTemplates = mod:original_require("scripts/ui/pass_templates/button_pass_templates")
 
+local SliderPassTemplates = mod:original_require("scripts/ui/pass_templates/slider_pass_templates")
+
 local grid_width = OptionsViewSettings.grid_size[1]
 
 -- Editable fields. `action` fields live under preset.actions[key];
 -- others live directly on the preset.
 local FIELDS = {
-    { key = "Vibrate",  label = "Vibrate",     min = 0, max = 20, step = 1, action = true },
-    { key = "Rotate",   label = "Rotate",      min = 0, max = 20, step = 1, action = true },
-    { key = "Pump",     label = "Pump",        min = 0, max = 3,  step = 1, action = true },
-    { key = "duration", label = "Duration (s)", min = 0, max = 30, step = 1 },
-    { key = "loop_on",  label = "Loop On (s)",  min = 0, max = 20, step = 1 },
-    { key = "loop_off", label = "Loop Off (s)", min = 0, max = 20, step = 1 },
+    { key = "Vibrate",   label = "Vibrate",      min = 0, max = 20,  step = 1, action = true },
+    { key = "Rotate",    label = "Rotate",       min = 0, max = 20,  step = 1, action = true },
+    { key = "Pump",      label = "Pump",         min = 0, max = 3,   step = 1, action = true },
+    { key = "Thrusting", label = "Thrusting",    min = 0, max = 20,  step = 1, action = true },
+    { key = "Fingering", label = "Fingering",    min = 0, max = 20,  step = 1, action = true },
+    { key = "Suction",   label = "Suction",      min = 0, max = 20,  step = 1, action = true },
+    { key = "Depth",     label = "Depth",        min = 0, max = 3,   step = 1, action = true },
+    { key = "Stroke",    label = "Stroke",       min = 0, max = 100, step = 1, action = true },
+    { key = "Oscillate", label = "Oscillate",    min = 0, max = 20,  step = 1, action = true },
+    { key = "duration",  label = "Duration (s)", min = 0, max = 30,  step = 1 },
+    { key = "loop_on",   label = "Loop On (s)",  min = 0, max = 30,  step = 1 },
+    { key = "loop_off",  label = "Loop Off (s)", min = 0, max = 30,  step = 1 },
 }
+
+-- Engine drag-slider passes. The left `value_text` area doubles as our
+-- field label ("Vibrate  12"). Geometry must match the definitions file.
+local SLIDER_W       = 440
+local SLIDER_H       = 44
+local SLIDER_LABEL_W = 170
+
+local slider_passes = SliderPassTemplates.value_slider(SLIDER_W, SLIDER_H, SLIDER_LABEL_W, true)
 
 local hotspot_style = {
     on_hover_sound   = UISoundEvents.default_mouse_hover,
@@ -31,112 +47,6 @@ text_style.font_size  = 20
 local text_style2 = table.clone(UIFontSettings.list_button_second_row)
 text_style2.offset[1] = 10
 text_style2.offset[2] = 22
-
--- Reusable value stepper pass template. Reads content.{value,min,max,step}
--- and calls content.on_changed_callback(new_value) when changed.
-local value_stepper_passes = {
-    {
-        pass_type = "logic",
-        value = function(pass, ui_renderer, style, content, position, size)
-            local changed = false
-            if content.hotspot_left and content.hotspot_left.on_pressed then
-                content.value = math.max(content.min, content.value - content.step)
-                changed = true
-            elseif content.hotspot_right and content.hotspot_right.on_pressed then
-                content.value = math.min(content.max, content.value + content.step)
-                changed = true
-            end
-            content.value_text = tostring(content.value)
-            if changed and content.on_changed_callback then
-                content.on_changed_callback(content.value)
-            end
-        end,
-    },
-    {
-        pass_type = "rect",
-        style     = { color = { 60, 20, 20, 24 }, offset = { 0, 0, 0 } },
-    },
-    {
-        pass_type = "text",
-        value_id  = "label",
-        style     = {
-            font_type                 = "proxima_nova_bold",
-            font_size                 = 20,
-            text_color                = { 255, 220, 200, 200 },
-            text_horizontal_alignment = "left",
-            text_vertical_alignment   = "center",
-            offset                    = { 14, 0, 2 },
-            size                      = { 220, 56 },
-        },
-    },
-    {
-        pass_type  = "hotspot",
-        content_id = "hotspot_left",
-        content    = hotspot_style,
-        style      = {
-            horizontal_alignment = "left",
-            vertical_alignment   = "center",
-            size                 = { 44, 44 },
-            offset               = { 250, 0, 3 },
-        },
-    },
-    {
-        pass_type = "text",
-        value     = "<",
-        style     = {
-            font_type                 = "proxima_nova_bold",
-            font_size                 = 28,
-            text_color                = { 255, 255, 230, 200 },
-            text_horizontal_alignment = "center",
-            text_vertical_alignment   = "center",
-            horizontal_alignment      = "left",
-            vertical_alignment        = "center",
-            size                      = { 44, 44 },
-            offset                    = { 250, 0, 4 },
-        },
-    },
-    {
-        pass_type = "text",
-        value_id  = "value_text",
-        style     = {
-            font_type                 = "proxima_nova_bold",
-            font_size                 = 24,
-            text_color                = { 255, 255, 240, 220 },
-            text_horizontal_alignment = "center",
-            text_vertical_alignment   = "center",
-            horizontal_alignment      = "left",
-            vertical_alignment        = "center",
-            size                      = { 60, 44 },
-            offset                    = { 296, 0, 4 },
-        },
-    },
-    {
-        pass_type  = "hotspot",
-        content_id = "hotspot_right",
-        content    = hotspot_style,
-        style      = {
-            horizontal_alignment = "left",
-            vertical_alignment   = "center",
-            size                 = { 44, 44 },
-            offset               = { 356, 0, 3 },
-        },
-    },
-    {
-        pass_type = "text",
-        value     = ">",
-        style     = {
-            font_type                 = "proxima_nova_bold",
-            font_size                 = 28,
-            text_color                = { 255, 255, 230, 200 },
-            text_horizontal_alignment = "center",
-            text_vertical_alignment   = "center",
-            horizontal_alignment      = "left",
-            vertical_alignment        = "center",
-            size                      = { 44, 44 },
-            offset                    = { 356, 0, 4 },
-        },
-    },
-}
 
 local blueprints = {
     -- Selectable preset row in the left list.
@@ -198,7 +108,8 @@ local blueprints = {
 }
 
 return settings("PresetEditorViewBlueprints", {
-    blueprints           = blueprints,
-    fields               = FIELDS,
-    value_stepper_passes = value_stepper_passes,
+    blueprints    = blueprints,
+    fields        = FIELDS,
+    slider_passes = slider_passes,
+    slider_size   = { SLIDER_W, SLIDER_H },
 })

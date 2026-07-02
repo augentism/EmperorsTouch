@@ -13,9 +13,13 @@ local UIWidget               = mod:original_require("scripts/managers/ui/ui_widg
 local UIWidgetGrid           = mod:original_require("scripts/ui/widget_logic/ui_widget_grid")
 local ViewElementInputLegend = mod:original_require("scripts/ui/view_elements/view_element_input_legend/view_element_input_legend")
 
+local DropdownHelper = mod:io_dofile("EmperorsTouch/scripts/mods/EmperorsTouch/view/dropdown_helper")
+
 local VIEW_NAME = "emperors_touch_preset_editor"
 
 local PresetEditorView = class("PresetEditorView", "BaseView")
+
+DropdownHelper.install(PresetEditorView)
 
 -- ===== Field helpers =====
 
@@ -56,7 +60,7 @@ PresetEditorView.init = function(self, settings_arg)
     local bp            = mod:io_dofile("EmperorsTouch/scripts/mods/EmperorsTouch/view/preset_editor_view_blueprints")
     self._blueprints    = bp.blueprints
     self._fields        = bp.fields
-    self._stepper_passes = bp.value_stepper_passes
+    self._slider_passes = bp.slider_passes
     self._view_settings = mod:io_dofile("EmperorsTouch/scripts/mods/EmperorsTouch/view/preset_editor_view_settings")
 
     self._presets       = mod:get_presets()   -- working copy, persisted on change
@@ -104,31 +108,65 @@ PresetEditorView.on_enter = function(self)
     if del_button then
         del_button.content.hotspot.pressed_callback = callback(self, "cb_delete_preset")
     end
+    local test_button = self._widgets_by_name.test_button
+    if test_button then
+        test_button.content.hotspot.pressed_callback = callback(self, "cb_test_preset")
+    end
+    -- Target dropdown for the test button: All Toys + each cached toy
+    local toy_options = { { id = "__all", display_name = "All Toys", ignore_localization = true } }
+    for _, toy in ipairs(mod.toys or {}) do
+        local name = (toy.nickName and toy.nickName ~= "") and toy.nickName
+            or (toy.name or "toy"):gsub("^%l", string.upper)
+        toy_options[#toy_options + 1] = { id = toy.id, display_name = name, ignore_localization = true }
+    end
+    self._test_target_id   = "__all"
+    self._test_target_name = "All Toys"
+
+    self._test_toy_dropdown = DropdownHelper.create(self, "test_toy_dropdown", "test_toy_selector", {
+        header_text = "Target",
+        size        = { 440, 44 },
+        value_width = 280,
+        options     = toy_options,
+        get_function = function()
+            return self._test_target_id
+        end,
+        on_activated = function(new_id)
+            self._test_target_id = new_id
+            for _, opt in ipairs(toy_options) do
+                if opt.id == new_id then
+                    self._test_target_name = opt.display_name
+                    break
+                end
+            end
+        end,
+    })
+    self._widgets[#self._widgets + 1] = self._test_toy_dropdown
 
     self:_build_steppers()
     self:_load_presets()
     self:_select(nil)
 end
 
--- ===== Steppers =====
+-- ===== Sliders =====
+
+local function slider_label(field, value)
+    return string.format("%s  %d", field.label, value)
+end
 
 PresetEditorView._build_steppers = function(self)
     for i, f in ipairs(self._fields) do
         local node = "stepper_" .. i
-        local def  = UIWidget.create_definition(self._stepper_passes, node)
+        local def  = UIWidget.create_definition(self._slider_passes, node)
         local widget = self:_create_widget(node, def)
         self._widgets[#self._widgets + 1] = widget   -- ensure it is drawn
 
+        local range   = f.max - f.min
         local content = widget.content
-        content.label = f.label
-        content.min   = f.min
-        content.max   = f.max
-        content.step  = f.step
-        content.value = f.min
-        content.value_text = tostring(f.min)
-        content.on_changed_callback = function(v)
-            self:_on_stepper_changed(f, v)
-        end
+        content.field          = f
+        content.step_size      = f.step / range   -- normalized, quantizes drag
+        content.slider_value   = 0
+        content.applied_value  = f.min
+        content.value_text     = slider_label(f, f.min)
 
         self._stepper_widgets[i] = widget
     end
@@ -142,8 +180,10 @@ PresetEditorView._sync_steppers = function(self)
         widget.visible = visible
         if preset then
             local v = field_get(preset, f)
-            widget.content.value = v
-            widget.content.value_text = tostring(v)
+            local content = widget.content
+            content.slider_value  = (v - f.min) / (f.max - f.min)
+            content.applied_value = v
+            content.value_text    = slider_label(f, v)
         end
     end
 
@@ -157,15 +197,31 @@ PresetEditorView._sync_steppers = function(self)
     end
 end
 
-PresetEditorView._on_stepper_changed = function(self, field, value)
+-- Called every frame: applies quantized slider movement to the preset.
+PresetEditorView._update_sliders = function(self)
     local preset = self._selected_id and self._presets[self._selected_id]
     if not preset then return end
-    field_set(preset, field, value)
-    mod:set_presets(self._presets)
 
-    -- Update the selected row's subtitle in place
-    local row = self._row_by_id[self._selected_id]
-    if row then row.content.text2 = preset_summary(preset) end
+    local changed = false
+    for i, f in ipairs(self._fields) do
+        local content = self._stepper_widgets[i].content
+        local range   = f.max - f.min
+        local raw     = f.min + (content.slider_value or 0) * range
+        local value   = math.min(f.max, math.max(f.min, math.floor(raw / f.step + 0.5) * f.step))
+
+        if value ~= content.applied_value then
+            content.applied_value = value
+            content.value_text    = slider_label(f, value)
+            field_set(preset, f, value)
+            changed = true
+        end
+    end
+
+    if changed then
+        mod:set_presets(self._presets)
+        local row = self._row_by_id[self._selected_id]
+        if row then row.content.text2 = preset_summary(preset) end
+    end
 end
 
 -- ===== Preset list =====
@@ -271,6 +327,37 @@ PresetEditorView.cb_delete_preset = function(self)
     self:_select(nil)
 end
 
+PresetEditorView.cb_test_preset = function(self)
+    local preset = self._selected_id and self._presets[self._selected_id]
+    if not preset then
+        mod:echo("Select a preset to test.")
+        return
+    end
+
+    local target_id   = self._test_target_id ~= "__all" and self._test_target_id or nil
+    local target_name = self._test_target_name or "All Toys"
+
+    -- A duration of 0 means "run until stopped"; cap tests at 3s so a
+    -- test can't leave a toy running indefinitely.
+    local duration = preset.duration or 0
+    if duration <= 0 then duration = 3 end
+
+    local cmd = mod:make_toy_command({
+        actions  = mod:scale_actions(preset.actions, 1),
+        duration = duration,
+        loop_on  = preset.loop_on,
+        loop_off = preset.loop_off,
+        toy      = target_id,
+    })
+    mod:send_toy_command(cmd, function(ok, err)
+        if ok then
+            mod:echo(string.format("Testing '%s' on %s", preset.name or "preset", target_name))
+        else
+            mod:echo("Test failed: " .. tostring(err))
+        end
+    end)
+end
+
 PresetEditorView.cb_on_back_pressed = function(self)
     Managers.ui:close_view(VIEW_NAME)
 end
@@ -281,17 +368,24 @@ PresetEditorView.update = function(self, dt, t, input_service)
     if self._entries_grid then
         self._entries_grid:update(dt, t, input_service)
     end
+    self:_update_sliders()
+    if self._test_toy_dropdown then
+        DropdownHelper.update(self, self._test_toy_dropdown, input_service, dt, t)
+    end
+    DropdownHelper.handle_outside_click(self, input_service)
     return PresetEditorView.super.update(self, dt, t, input_service)
 end
 
 PresetEditorView.draw = function(self, dt, t, input_service, layer)
-    self:_draw_elements(dt, t, self._ui_renderer, self._render_settings, input_service)
+    DropdownHelper.draw_with_focus(self, dt, t, input_service, function(effective_input)
+        self:_draw_elements(dt, t, self._ui_renderer, self._render_settings, effective_input)
 
-    if self._entry_widgets and #self._entry_widgets > 0 then
-        self:_draw_grid(dt, t, input_service)
-    end
+        if self._entry_widgets and #self._entry_widgets > 0 then
+            self:_draw_grid(dt, t, effective_input)
+        end
 
-    PresetEditorView.super.draw(self, dt, t, input_service, layer)
+        PresetEditorView.super.draw(self, dt, t, effective_input, layer)
+    end)
 end
 
 PresetEditorView._draw_grid = function(self, dt, t, input_service)

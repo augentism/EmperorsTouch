@@ -104,3 +104,11 @@ function mod:dispatch_hook(hook_id, scale)
         last_scale[hook_id] = scale
     end
 end
+
+-- Clears debounce/change-tracking state, so the first dispatch of the next
+-- mission always sends. Called on mission end.
+function mod:reset_dispatch()
+    table.clear(last_fire)
+    table.clear(last_scale)
+    last_any_fire = -math.huge
+end

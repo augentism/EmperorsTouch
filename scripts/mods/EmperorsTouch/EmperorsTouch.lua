@@ -143,7 +143,17 @@ end
 -- ===== Toy commands =====
 
 -- Max strength per action, used for clamping.
-local ACTION_MAX = { Vibrate = 20, Rotate = 20, Pump = 3 }
+local ACTION_MAX = {
+    Vibrate   = 20,
+    Rotate    = 20,
+    Pump      = 3,
+    Thrusting = 20,
+    Fingering = 20,
+    Suction   = 20,
+    Depth     = 3,
+    Stroke    = 100,
+    Oscillate = 20,
+}
 
 -- Returns a copy of an actions table with each strength multiplied by scale
 -- and clamped to that action's valid range. scale defaults to 1.
@@ -220,8 +230,11 @@ function mod:make_toy_command(opts)
 end
 
 -- Convenience factory for stopping: all actions on one toy, or everything.
+-- Uses the API's dedicated "Stop" action, which halts every function.
 function mod:make_stop_command(toy)
-    return mod:make_toy_command({ actions = { Vibrate = 0, Rotate = 0, Pump = 0 }, toy = toy })
+    local cmd = mod:make_toy_command({ actions = {}, toy = toy })
+    cmd.action = "Stop"
+    return cmd
 end
 
 -- Sends a command produced by make_toy_command. on_done(ok, err) is

@@ -103,7 +103,7 @@ local scenegraph_definition = {
         vertical_alignment   = "top",
         parent               = "screen",
         horizontal_alignment = "left",
-        size                 = { 500, 44 },
+        size                 = { 960, 44 },
         position             = { 760, 240, 2 },
     },
 
@@ -111,7 +111,7 @@ local scenegraph_definition = {
         vertical_alignment   = "top",
         parent               = "screen",
         horizontal_alignment = "left",
-        size                 = { 500, 600 },
+        size                 = { 960, 600 },
         position             = { 760, 300, 2 },
     },
 }
@@ -178,7 +178,7 @@ local widget_definitions = {
                 text_color                = { 255, 220, 200, 160 },
                 text_horizontal_alignment = "left",
                 text_vertical_alignment   = "center",
-                size                      = { 500, 44 },
+                size                      = { 960, 44 },
                 offset                    = { 0, 0, 2 },
             },
         },
