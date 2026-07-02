@@ -190,6 +190,16 @@ PresetEditorView._sync_steppers = function(self)
     local del_button = self._widgets_by_name.delete_button
     if del_button then del_button.visible = visible end
 
+    local test_button = self._widgets_by_name.test_button
+    if test_button then test_button.visible = visible end
+
+    if self._test_toy_dropdown then
+        self._test_toy_dropdown.visible = visible
+        if not visible and self._focused_dropdown == self._test_toy_dropdown then
+            self:close_focused_dropdown()
+        end
+    end
+
     local label = self._widgets_by_name.selected_label
     if label then
         label.visible = visible
@@ -369,7 +379,7 @@ PresetEditorView.update = function(self, dt, t, input_service)
         self._entries_grid:update(dt, t, input_service)
     end
     self:_update_sliders()
-    if self._test_toy_dropdown then
+    if self._test_toy_dropdown and self._test_toy_dropdown.visible then
         DropdownHelper.update(self, self._test_toy_dropdown, input_service, dt, t)
     end
     DropdownHelper.handle_outside_click(self, input_service)

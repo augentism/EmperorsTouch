@@ -114,6 +114,47 @@ local scenegraph_definition = {
         size                 = { 960, 600 },
         position             = { 760, 300, 2 },
     },
+
+    -- Scroll plumbing for the hook panel (mirrors the toy list grid)
+    hook_grid_start = {
+        vertical_alignment   = "top",
+        parent               = "hook_panel",
+        horizontal_alignment = "left",
+        size                 = { 0, 0 },
+        position             = { 0, 0, 0 },
+    },
+
+    hook_grid_content_pivot = {
+        vertical_alignment   = "top",
+        parent               = "hook_grid_start",
+        horizontal_alignment = "left",
+        size                 = { 0, 0 },
+        position             = { 0, 0, 1 },
+    },
+
+    hook_grid_mask = {
+        vertical_alignment   = "center",
+        parent               = "hook_panel",
+        horizontal_alignment = "center",
+        size                 = { 960 + 16, 600 + 16 },
+        position             = { 0, 0, 0 },
+    },
+
+    hook_grid_interaction = {
+        vertical_alignment   = "top",
+        parent               = "hook_panel",
+        horizontal_alignment = "left",
+        size                 = { 960 + 20, 600 + 16 },
+        position             = { 0, 0, 0 },
+    },
+
+    hook_scrollbar = {
+        vertical_alignment   = "center",
+        parent               = "hook_panel",
+        horizontal_alignment = "right",
+        size                 = { 10, 600 },
+        position             = { 24, 0, 1 },
+    },
 }
 
 local widget_definitions = {
@@ -166,6 +207,20 @@ local widget_definitions = {
         "get_toys_button",
         { original_text = "Get Toys" }
     ),
+
+    hook_scrollbar = UIWidget.create_definition(ScrollbarPassTemplates.default_scrollbar, "hook_scrollbar"),
+
+    hook_grid_mask = UIWidget.create_definition({
+        {
+            value     = "content/ui/materials/offscreen_masks/ui_overlay_offscreen_vertical_blur",
+            pass_type = "texture",
+            style     = { color = { 255, 255, 255, 255 } },
+        }
+    }, "hook_grid_mask"),
+
+    hook_grid_interaction = UIWidget.create_definition({
+        { pass_type = "hotspot", content_id = "hotspot" }
+    }, "hook_grid_interaction"),
 
     hook_panel_title = UIWidget.create_definition({
         {

@@ -41,22 +41,20 @@ other file needs to change**.
 ```lua
 -- event kind
 {
-    id                = "on_dodge",          -- unique, stable; used as the persistence key
-    name              = "Dodge",             -- label shown in the toys view
-    kind              = "event",
-    cooldown          = 0.4,                 -- min seconds between dispatches of THIS hook
-    supported_actions = { "Vibrate", "Rotate", "Pump" },
+    id       = "on_dodge",          -- unique, stable; used as the persistence key
+    name     = "Dodge",             -- label shown in the toys view
+    kind     = "event",
+    cooldown = 0.4,                 -- min seconds between dispatches of THIS hook
 },
 
 -- poll kind
 {
-    id                = "peril_pct",
-    name              = "Peril Level",
-    kind              = "poll",
-    interval          = 0.25,                -- seconds between poll() evaluations
-    cooldown          = 0.1,
-    supported_actions = { "Vibrate", "Rotate" },
-    poll              = function() return get_peril_fraction() end,
+    id       = "peril_pct",
+    name     = "Peril Level",
+    kind     = "poll",
+    interval = 0.25,                -- seconds between poll() evaluations
+    cooldown = 0.1,
+    poll     = function() return get_peril_fraction() end,
 },
 ```
 
@@ -73,8 +71,6 @@ Descriptor fields:
   tick. The scale multiplies the assigned preset's action strengths.
   Dispatch skips sends when the scale changed less than `SCALE_EPSILON`
   (3%) since the last *sent* value.
-- **`supported_actions`** — which actions this hook can meaningfully drive
-  (reserved for UI filtering).
 
 ### 3. Wire it (event hooks only)
 
@@ -94,7 +90,7 @@ Poll hooks need no wiring — `mod.update` (in `EmperorsTouch.lua`) walks
 
 ### 4. That's it — verify
 
-1. Run `python deploy.py` and launch the game.
+1. Reload the mod
 2. Open the toys view (default **F10**), select a toy: the new hook appears
    in the right-hand panel with a preset dropdown.
 3. Assign a preset and trigger the event in-game (Psykhanium works for

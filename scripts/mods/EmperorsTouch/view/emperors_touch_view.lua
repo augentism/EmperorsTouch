@@ -84,6 +84,8 @@ EmperorsTouchView.on_enter = function(self)
     self:_setup_input_legend()
     self:_setup_get_toys_button()
 
+    self:_clear_hook_panel()
+
     -- Show the cached toy list; Get Toys re-polls and refreshes the cache.
     if #(mod.toys or {}) > 0 then
         self:_populate_toys(mod.toys)
@@ -255,20 +257,17 @@ EmperorsTouchView._clear_hook_panel = function(self)
     self:close_focused_dropdown()
 
     for _, w in ipairs(self._hook_panel_widgets or {}) do
-        for i = #self._widgets, 1, -1 do
-            if self._widgets[i] == w then
-                table.remove(self._widgets, i)
-                break
-            end
-        end
         pcall(function() self:_unregister_widget_name(w.name) end)
     end
     self._hook_panel_widgets = {}
+    self._hook_grid          = nil
 
     local title = self._widgets_by_name.hook_panel_title
     if title then
         title.content.text = ""
     end
+    local scrollbar = self._widgets_by_name.hook_scrollbar
+    if scrollbar then scrollbar.visible = false end
 end
 
 EmperorsTouchView._build_hook_panel = function(self, toy)
@@ -284,14 +283,16 @@ EmperorsTouchView._build_hook_panel = function(self, toy)
         title.content.text = "Hooks — " .. name
     end
 
-    local ROW_H  = 52
-    local toy_id = toy.id
+    local ROW_H     = 44
+    local ROW_GAP   = 8
+    local toy_id    = toy.id
+    local hooks     = mod.HOOKS or {}
 
-    for i, hook in ipairs(mod.HOOKS or {}) do
+    for i, hook in ipairs(hooks) do
         local hook_id = hook.id
         local entry = {
             header_text = hook.name,
-            size        = { 960, 44 },   -- label gets 960 - value_width; wide enough for long hook names
+            size        = { 960, ROW_H },   -- label gets 960 - value_width; wide enough for long hook names
             value_width = 320,
             options     = self:_preset_options(),
             get_function = function()
@@ -306,11 +307,36 @@ EmperorsTouchView._build_hook_panel = function(self, toy)
             end,
         }
 
-        local widget = DropdownHelper.create(self, "hook_panel_row_" .. i, "hook_panel", entry)
-        widget.offset = { 0, (i - 1) * ROW_H, 0 }
-
-        self._widgets[#self._widgets + 1] = widget   -- drawn by BaseView
+        local widget = DropdownHelper.create(self, "hook_panel_row_" .. i, "hook_grid_content_pivot", entry)
         self._hook_panel_widgets[#self._hook_panel_widgets + 1] = widget
+    end
+
+    -- Scrollable grid; rows are drawn via the offscreen renderer so they
+    -- clip to the panel mask. An open dropdown is drawn separately on top
+    -- (draw_with_focus), escaping the mask.
+    if #self._hook_panel_widgets > 0 then
+        self._hook_grid = UIWidgetGrid:new(
+            self._hook_panel_widgets,
+            self._hook_panel_widgets,
+            self._ui_scenegraph,
+            "hook_panel",
+            "down",
+            { 0, ROW_GAP },
+            nil,
+            true
+        )
+        self._hook_grid:set_render_scale(self._render_scale)
+
+        local scrollbar = self._widgets_by_name.hook_scrollbar
+        if scrollbar then
+            local panel_h  = 600
+            local overflow = #self._hook_panel_widgets * (ROW_H + ROW_GAP) > panel_h
+            scrollbar.visible = overflow
+            if overflow then
+                self._hook_grid:assign_scrollbar(scrollbar, "hook_grid_content_pivot", "hook_panel")
+                self._hook_grid:set_scrollbar_progress(0)
+            end
+        end
     end
 end
 
@@ -323,6 +349,9 @@ end
 EmperorsTouchView.update = function(self, dt, t, input_service)
     if self._entries_grid then
         self._entries_grid:update(dt, t, input_service)
+    end
+    if self._hook_grid then
+        self._hook_grid:update(dt, t, input_service)
     end
     if self._entry_widgets then
         for _, widget in ipairs(self._entry_widgets) do
@@ -350,6 +379,11 @@ EmperorsTouchView.draw = function(self, dt, t, input_service, layer)
             self:_draw_grid(self._entries_grid, self._entry_widgets, grid_interaction, dt, t, effective_input)
         end
 
+        if self._hook_panel_widgets and #self._hook_panel_widgets > 0 then
+            local hook_interaction = self._widgets_by_name.hook_grid_interaction
+            self:_draw_grid(self._hook_grid, self._hook_panel_widgets, hook_interaction, dt, t, effective_input)
+        end
+
         EmperorsTouchView.super.draw(self, dt, t, effective_input, layer)
     end)
 end
@@ -361,7 +395,9 @@ EmperorsTouchView._draw_grid = function(self, grid, widgets, interaction_widget,
 
     UIRenderer.begin_pass(ui_renderer, ui_scenegraph, input_service, dt, render_settings)
     for _, widget in ipairs(widgets) do
-        local visible = not grid or grid:is_widget_visible(widget)
+        -- widget.visible == false: hidden (e.g. the focused dropdown, drawn
+        -- separately on top by draw_with_focus)
+        local visible = widget.visible ~= false and (not grid or grid:is_widget_visible(widget))
         if visible then
             UIWidget.draw(widget, ui_renderer)
         end

@@ -47,40 +47,35 @@ end
 -- ===== Registry =====
 -- cooldown: minimum seconds between this hook's own dispatches.
 -- interval (poll only): seconds between poll() evaluations.
--- supported_actions: which actions a preset for this hook may drive (UI filter).
 
 local HOOKS = {
     {
-        id                = "on_damage_taken",
-        name              = "Damage Taken",
-        kind              = "event",
-        cooldown          = 0.4,
-        supported_actions = { "Vibrate", "Rotate", "Pump" },
+        id       = "on_damage_taken",
+        name     = "Damage Taken",
+        kind     = "event",
+        cooldown = 0.4,
     },
     {
-        id                = "health_pct",
-        name              = "Health Level",
-        kind              = "poll",
-        interval          = 0.25,
-        cooldown          = 0.1,
-        supported_actions = { "Vibrate", "Rotate" },
+        id       = "health_pct",
+        name     = "Health Level",
+        kind     = "poll",
+        interval = 0.25,
+        cooldown = 0.1,
         -- Full strength at full health, off when downed. Invert in a future
         -- preset option if "stronger when hurt" is wanted.
-        poll              = function() return local_health_fraction() end,
+        poll     = function() return local_health_fraction() end,
     },
     {
-        id                = "on_victory",
-        name              = "Mission Victory",
-        kind              = "event",
-        cooldown          = 10,
-        supported_actions = { "Vibrate", "Rotate", "Pump" },
+        id       = "on_victory",
+        name     = "Mission Victory",
+        kind     = "event",
+        cooldown = 10,
     },
     {
-        id                = "on_defeat",
-        name              = "Mission Defeat",
-        kind              = "event",
-        cooldown          = 10,
-        supported_actions = { "Vibrate", "Rotate", "Pump" },
+        id       = "on_defeat",
+        name     = "Mission Defeat",
+        kind     = "event",
+        cooldown = 10,
     },
 }
 
