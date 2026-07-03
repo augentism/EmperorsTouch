@@ -320,8 +320,42 @@ local nil_polls  = {}   -- [hook_id] = consecutive polls that returned nil
 -- toy stuck at its last intensity.
 local NIL_POLLS_BEFORE_STOP = 3
 
+-- Auto-query toys on game launch so hooks work without opening the menu
+-- first. Retries because the backend/Lovense app may not be up yet.
+local toys_bootstrap = {
+    done         = false,
+    attempts     = 0,
+    max_attempts = 5,
+    next_try     = 0,
+    retry_delay  = 10,
+    in_flight    = false,
+}
+
+local function bootstrap_toys(now)
+    if toys_bootstrap.done or toys_bootstrap.in_flight or now < toys_bootstrap.next_try then
+        return
+    end
+
+    toys_bootstrap.attempts  = toys_bootstrap.attempts + 1
+    toys_bootstrap.next_try  = now + toys_bootstrap.retry_delay
+    toys_bootstrap.in_flight = true
+
+    mod:get_toys(function(toys, err)
+        toys_bootstrap.in_flight = false
+        if not err then
+            -- Success (even with zero toys paired): the app answered.
+            toys_bootstrap.done = true
+        elseif toys_bootstrap.attempts >= toys_bootstrap.max_attempts then
+            toys_bootstrap.done = true   -- give up quietly; Get Toys still works
+        end
+    end)
+end
+
 function mod.update(dt)
     local now = mod:clock()
+
+    bootstrap_toys(now)
+
     for _, hook in ipairs(mod.POLL_HOOKS or {}) do
         local interval = hook.interval or 0.25
         if now - (last_poll[hook.id] or -math.huge) >= interval then

@@ -44,6 +44,19 @@ local function is_local_player(unit)
     return player and unit == player.player_unit
 end
 
+-- True if unit belongs to another human-controlled player (an ally).
+local function is_other_human_player(unit)
+    if not unit or not Managers.player then return false end
+    local local_player = Managers.player:local_player_safe(1)
+    if local_player and unit == local_player.player_unit then return false end
+    for _, player in pairs(Managers.player:players()) do
+        if player.player_unit == unit then
+            return player:is_human_controlled()
+        end
+    end
+    return false
+end
+
 -- Returns the local player's peril/warp charge fraction (0..1), or nil if
 -- unavailable (not a Psyker, not in a mission). Reads the warp_charge
 -- component from the unit_data extension, same as Skitarius does.
@@ -66,7 +79,7 @@ end
 local HOOKS = {
     {
         id       = "on_damage_taken",
-        name     = "Damage Taken",
+        name     = "Health Damage Taken",
         kind     = "event",
         cooldown = 0.4,
     },
@@ -99,6 +112,96 @@ local HOOKS = {
     {
         id       = "on_knocked_down",
         name     = "Knocked Down",
+        kind     = "event",
+        cooldown = 5,
+    },
+    {
+        id       = "on_toughness_broken",
+        name     = "Toughness Broken",
+        kind     = "event",
+        cooldown = 2,
+    },
+    {
+        id       = "on_grabbed_mutant",
+        name     = "Grabbed by Mutant",
+        kind     = "event",
+        cooldown = 5,
+    },
+    {
+        id       = "on_netted",
+        name     = "Trapped by Trapper",
+        kind     = "event",
+        cooldown = 5,
+    },
+    {
+        id       = "on_pounced",
+        name     = "Pounced by Hound",
+        kind     = "event",
+        cooldown = 5,
+    },
+    {
+        id       = "on_consumed",
+        name     = "Eaten by Beast of Nurgle",
+        kind     = "event",
+        cooldown = 5,
+    },
+    {
+        id       = "on_grabbed_spawn",
+        name     = "Grabbed by Chaos Spawn",
+        kind     = "event",
+        cooldown = 5,
+    },
+    {
+        id       = "on_boss_spawn",
+        name     = "Boss Spawned",
+        kind     = "event",
+        cooldown = 10,
+    },
+    {
+        id       = "on_backstab_warning",
+        name     = "Backstab Warning",
+        kind     = "event",
+        cooldown = 2,
+    },
+    {
+        id       = "on_game_enter",
+        name     = "Mission Start",
+        kind     = "event",
+        cooldown = 30,
+    },
+    {
+        id       = "on_elite_kill",
+        name     = "Elite Killed",
+        kind     = "event",
+        cooldown = 0.5,
+    },
+    {
+        id       = "on_death",
+        name     = "Player Death",
+        kind     = "event",
+        cooldown = 10,
+    },
+    {
+        id       = "on_ability_used",
+        name     = "Ability Used",
+        kind     = "event",
+        cooldown = 1,
+    },
+    {
+        id       = "on_ally_down",
+        name     = "Ally Knocked Down",
+        kind     = "event",
+        cooldown = 3,
+    },
+    {
+        id       = "on_ally_death",
+        name     = "Ally Death",
+        kind     = "event",
+        cooldown = 5,
+    },
+    {
+        id       = "on_hack_complete",
+        name     = "Hacking Complete",
         kind     = "event",
         cooldown = 5,
     },
@@ -136,12 +239,38 @@ end
 -- Each game hook simply calls mod:dispatch_hook(id); dispatch handles
 -- debounce, grouping, and sending.
 
+-- Attack results where the target's HEALTH actually took damage — not
+-- dodges, blocks, or hits fully absorbed by toughness/shields.
+local HEALTH_DAMAGE_RESULTS = {
+    damaged    = true,
+    died       = true,
+    knock_down = true,
+}
+
 -- hook_safe callbacks receive the original arguments directly (no `func`
 -- first parameter — that is only for mod:hook).
-mod:hook_safe(CLASS.AttackReportManager, "add_attack_result", function(self, damage_profile, attacked_unit, attacking_unit, ...)
+-- Health damage taken (attacked == me) and elite kills (attacker == me,
+-- target died with the elite/special breed tag) both come from the attack
+-- report.
+mod:hook_safe(CLASS.AttackReportManager, "add_attack_result", function(self, damage_profile, attacked_unit, attacking_unit, attack_direction, hit_world_position, hit_weakspot, damage, attack_result, ...)
     local ok, hit_me = pcall(is_local_player, attacked_unit)
     if ok and hit_me then
-        mod:dispatch_hook("on_damage_taken")
+        if HEALTH_DAMAGE_RESULTS[attack_result] then
+            mod:dispatch_hook("on_damage_taken")
+        end
+        return
+    end
+
+    if attack_result == "died" then
+        local ok_kill, my_elite_kill = pcall(function()
+            if not is_local_player(attacking_unit) then return false end
+            local unit_data = ScriptUnit.has_extension(attacked_unit, "unit_data_system")
+            local breed = unit_data and unit_data:breed()
+            return breed and breed.tags and (breed.tags.elite or breed.tags.special) or false
+        end)
+        if ok_kill and my_elite_kill then
+            mod:dispatch_hook("on_elite_kill")
+        end
     end
 end)
 
@@ -156,13 +285,94 @@ mod:hook_safe(CLASS.GameModeManager, "_set_end_conditions_met", function(self, o
     end
 end)
 
--- Knocked down: Darktide models this as a character state (the Vermintide
--- PlayerUnitHealthExtension:_knock_down equivalent). on_enter receives the
--- downed unit; only fire for the local player.
-mod:hook_safe(CLASS.PlayerCharacterStateKnockedDown, "on_enter", function(self, unit, ...)
-    local ok, is_me = pcall(is_local_player, unit)
+-- Disabler states + death. Darktide models each as a character state (the
+-- Vermintide PlayerUnitHealthExtension:_knock_down equivalent); on_enter
+-- receives the affected unit. Knocked down / dead also fire ally variants
+-- when the unit is another human-controlled player.
+local function state_event(state_class, my_hook_id, ally_hook_id)
+    mod:hook_safe(state_class, "on_enter", function(self, unit, ...)
+        local ok, is_me = pcall(is_local_player, unit)
+        if ok and is_me then
+            mod:dispatch_hook(my_hook_id)
+        elseif ally_hook_id then
+            local ok_ally, is_ally = pcall(is_other_human_player, unit)
+            if ok_ally and is_ally then
+                mod:dispatch_hook(ally_hook_id)
+            end
+        end
+    end)
+end
+
+state_event(CLASS.PlayerCharacterStateKnockedDown,   "on_knocked_down", "on_ally_down")
+state_event(CLASS.PlayerCharacterStateDead,          "on_death",        "on_ally_death")
+state_event(CLASS.PlayerCharacterStateMutantCharged, "on_grabbed_mutant")
+state_event(CLASS.PlayerCharacterStateNetted,        "on_netted")
+state_event(CLASS.PlayerCharacterStatePounced,       "on_pounced")
+state_event(CLASS.PlayerCharacterStateConsumed,      "on_consumed")       -- Beast of Nurgle swallow
+state_event(CLASS.PlayerCharacterStateGrabbed,       "on_grabbed_spawn")  -- Chaos Spawn grab
+
+-- Boss/monster spawn: BossExtension is created on every machine when the
+-- unit spawns (SpawnFeed uses the same hook), so this works as a client too.
+mod:hook_safe(CLASS.BossExtension, "extensions_ready", function(self)
+    local breed = self._breed
+    if breed and breed.tags and breed.tags.monster then
+        mod:dispatch_hook("on_boss_spawn")
+    end
+end)
+
+-- Toughness break: the extension records this exact moment (toughness
+-- fully depleted from a nonzero start) for the stats system.
+mod:hook_safe(CLASS.PlayerUnitToughnessExtension, "_record_toughness_broken", function(self)
+    local ok, is_me = pcall(is_local_player, self._unit)
     if ok and is_me then
-        mod:dispatch_hook("on_knocked_down")
+        mod:dispatch_hook("on_toughness_broken")
+    end
+end)
+
+-- Backstab warning: the game plays a warning sound when a minion attacks
+-- from behind. MinionAttack is a utility table, not a class, and we need
+-- the return value (true = the sound actually triggered) — hence mod:hook.
+local MinionAttack = mod:original_require("scripts/utilities/minion_attack")
+
+mod:hook(MinionAttack, "check_and_trigger_backstab_sound", function(func, attacking_unit, action_data, target_unit, ...)
+    local triggered = func(attacking_unit, action_data, target_unit, ...)
+    if triggered then
+        local ok, is_me = pcall(is_local_player, target_unit)
+        if ok and is_me then
+            mod:dispatch_hook("on_backstab_warning")
+        end
+    end
+    return triggered
+end)
+
+-- Combat ability use (a charge is consumed).
+mod:hook_safe(CLASS.PlayerUnitAbilityExtension, "use_ability_charge", function(self, ability_type, ...)
+    if ability_type ~= "combat_ability" then return end
+    local ok, is_me = pcall(is_local_player, self._unit)
+    if ok and is_me then
+        mod:dispatch_hook("on_ability_used")
+    end
+end)
+
+-- Hacking complete: MinigameBase.complete runs on the server directly and
+-- on clients via rpc_minigame_sync_completed. Only fire when the local
+-- player was the one running the minigame.
+mod:hook_safe(CLASS.MinigameBase, "complete", function(self)
+    local ok, is_mine = pcall(function()
+        local session_id = self:player_session_id()
+        local local_player = Managers.player and Managers.player:local_player_safe(1)
+        return session_id ~= nil and local_player ~= nil and session_id == local_player:session_id()
+    end)
+    if ok and is_mine then
+        mod:dispatch_hook("on_hack_complete")
+    end
+end)
+
+-- Mission start (real missions only — not the hub or the Psykhanium).
+mod:hook_safe(CLASS.StateGameplay, "on_enter", function(self, parent, params, ...)
+    local mission_name = params and params.mission_name
+    if mission_name and mission_name ~= "hub_ship" and mission_name ~= "tg_shooting_range" then
+        mod:dispatch_hook("on_game_enter")
     end
 end)
 
