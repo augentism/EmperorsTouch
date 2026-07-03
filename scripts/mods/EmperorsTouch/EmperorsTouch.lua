@@ -4,9 +4,10 @@ mod:io_dofile("EmperorsTouch/scripts/mods/EmperorsTouch/libs/json")
 
 local VIEW_NAME = "emperors_touch_view"
 
--- Lovense API endpoint. Test proxy for now; production would be
--- https://127-0-0-1.lovense.club:30010/command (same-machine Lovense Remote).
-local LOVENSE_URL = "http://localhost:5000/command"
+-- Lovense API endpoint: Lovense Remote running on this same PC.
+-- For proxy-based testing (phone app / simulated toys) use
+-- http://localhost:5000/command with server.py running.
+local LOVENSE_URL = "https://127-0-0-1.lovense.club:30010/command"
 
 local function register_view()
     mod:add_require_path("EmperorsTouch/scripts/mods/EmperorsTouch/view/emperors_touch_view")
@@ -109,6 +110,14 @@ function mod:get_toys(on_done)
     mod:send_command({ command = "GetToys" }, function(body, err)
         if err then
             on_done(nil, err)
+            return
+        end
+        -- "Reachable but no toys paired" is an empty list, not an error.
+        -- Lovense Remote (PC) answers code 402; Lovense Connect (phone)
+        -- answers code 404.
+        if body and (body.code == 402 or body.code == 404) then
+            mod.toys = {}
+            on_done(mod.toys, nil)
             return
         end
         if not body or body.code ~= 200 then

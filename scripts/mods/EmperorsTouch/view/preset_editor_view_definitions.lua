@@ -90,7 +90,7 @@ local scenegraph_definition = {
         vertical_alignment   = "bottom",
         parent               = "title_divider",
         horizontal_alignment = "left",
-        size                 = { 600, 50 },
+        size                 = { 1200, 50 },
         position             = { 0, -35, 1 },
     },
 

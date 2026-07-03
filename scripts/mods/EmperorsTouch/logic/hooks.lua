@@ -57,7 +57,7 @@ local HOOKS = {
     },
     {
         id       = "health_pct",
-        name     = "Health Level",
+        name     = "Health Level (Continuous)",
         kind     = "poll",
         interval = 0.25,
         cooldown = 0.1,

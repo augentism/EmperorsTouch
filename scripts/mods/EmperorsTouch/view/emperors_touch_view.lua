@@ -164,7 +164,7 @@ EmperorsTouchView._populate_toys = function(self, toys)
     self:_clear_hook_panel()
 
     if #toys == 0 then
-        self:_show_message("No toys found.")
+        self:_show_message("Connected, but no toys found.\nPair a toy in the Lovense app, then press Get Toys again.")
         return
     end
 
