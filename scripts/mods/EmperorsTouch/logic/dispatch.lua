@@ -69,30 +69,40 @@ function mod:dispatch_hook(hook_id, scale)
     local hook_assign = assignments[hook_id]
     if not hook_assign then return end
 
-    -- Group connected, assigned toys by preset id
+    local inversions = mod:get_inversions()
+    local hook_inv   = inversions[hook_id] or {}
+
+    -- Group connected, assigned toys by preset id + inversion flag, since
+    -- inverted toys get a different scale and need their own request.
     local live = connected_ids()
-    local by_preset = {}
+    local groups = {}   -- [key] = { preset_id, inverted, toy_ids }
     for toy_id, preset_id in pairs(hook_assign) do
         if preset_id and live[toy_id] and presets[preset_id] then
-            local group = by_preset[preset_id]
+            local inverted = hook_inv[toy_id] and true or false
+            local key = preset_id .. (inverted and "|inv" or "")
+            local group = groups[key]
             if not group then
-                group = {}
-                by_preset[preset_id] = group
+                group = { preset_id = preset_id, inverted = inverted, toy_ids = {} }
+                groups[key] = group
             end
-            group[#group + 1] = toy_id
+            group.toy_ids[#group.toy_ids + 1] = toy_id
         end
     end
 
-    -- One request per distinct preset, batching its toys
+    -- One request per distinct preset+inversion, batching its toys
     local sent = 0
-    for preset_id, toy_ids in pairs(by_preset) do
-        local p = presets[preset_id]
+    for _, group in pairs(groups) do
+        local p = presets[group.preset_id]
+        local effective_scale = scale
+        if scale ~= nil and group.inverted then
+            effective_scale = 1 - scale
+        end
         local cmd = mod:make_toy_command({
-            actions  = mod:scale_actions(p.actions, scale),
+            actions  = mod:scale_actions(p.actions, effective_scale),
             duration = p.duration,
             loop_on  = p.loop_on,
             loop_off = p.loop_off,
-            toy      = toy_ids,
+            toy      = group.toy_ids,
         })
         mod:send_toy_command(cmd)
         sent = sent + 1
@@ -102,6 +112,40 @@ function mod:dispatch_hook(hook_id, scale)
         last_fire[hook_id] = now
         last_any_fire      = now
         last_scale[hook_id] = scale
+    end
+end
+
+-- Zeroes this hook's output: sends its assigned presets at zero intensity
+-- to the assigned toys. Deliberately NOT a blanket "Stop" — only the
+-- actions this hook's presets drive are zeroed, so other hooks running on
+-- the same toy are unaffected. No-op if the hook has nothing active.
+function mod:stop_hook(hook_id)
+    if last_scale[hook_id] == nil then
+        return
+    end
+    last_scale[hook_id] = nil
+
+    local presets     = mod:get_presets()
+    local assignments = mod:get_assignments()
+    local hook_assign = assignments[hook_id]
+    if not hook_assign then return end
+
+    local live = connected_ids()
+    local by_preset = {}
+    for toy_id, preset_id in pairs(hook_assign) do
+        if preset_id and live[toy_id] and presets[preset_id] then
+            by_preset[preset_id] = by_preset[preset_id] or {}
+            table.insert(by_preset[preset_id], toy_id)
+        end
+    end
+
+    for preset_id, toy_ids in pairs(by_preset) do
+        local p = presets[preset_id]
+        mod:send_toy_command(mod:make_toy_command({
+            actions  = mod:scale_actions(p.actions, 0),
+            duration = 0,
+            toy      = toy_ids,
+        }))
     end
 end
 

@@ -253,6 +253,96 @@ end
 
 -- ===== Right-side hook panel =====
 
+-- Small inline "Invert" checkbox rendered inside a dropdown row, just left
+-- of the dropdown box. Toggles the poll-scale inversion for hook+toy.
+-- Reads/writes content.inverted; calls content.on_invert_toggled(new_state).
+local function invert_checkbox_passes(row_width, value_width)
+    local BOX     = 22
+    local LABEL_W = 60
+    local box_x   = row_width - value_width - BOX - 24
+    local label_x = box_x - LABEL_W - 8
+
+    return {
+        {
+            pass_type  = "hotspot",
+            content_id = "invert_hotspot",
+            style      = {
+                horizontal_alignment = "left",
+                vertical_alignment   = "center",
+                size                 = { LABEL_W + BOX + 16, 36 },
+                offset               = { label_x, 0, 4 },
+            },
+        },
+        {
+            pass_type = "logic",
+            value = function(pass, ui_renderer, style, content)
+                local hotspot = content.invert_hotspot
+                if hotspot and hotspot.on_pressed then
+                    content.inverted = not content.inverted
+                    if content.on_invert_toggled then
+                        content.on_invert_toggled(content.inverted)
+                    end
+                end
+            end,
+        },
+        {
+            pass_type = "text",
+            value     = "Invert",
+            style     = {
+                font_type                 = "proxima_nova_bold",
+                font_size                 = 16,
+                text_color                = { 255, 200, 200, 210 },
+                text_horizontal_alignment = "right",
+                text_vertical_alignment   = "center",
+                horizontal_alignment      = "left",
+                vertical_alignment        = "center",
+                size                      = { LABEL_W, 36 },
+                offset                    = { label_x, 0, 5 },
+            },
+            change_function = function(content, style)
+                local hovered = content.invert_hotspot and content.invert_hotspot.is_hover
+                style.text_color[1] = hovered and 255 or 180
+            end,
+        },
+        {
+            -- box outline
+            pass_type = "rect",
+            style     = {
+                horizontal_alignment = "left",
+                vertical_alignment   = "center",
+                size                 = { BOX, BOX },
+                offset               = { box_x, 0, 5 },
+                color                = { 180, 120, 110, 90 },
+            },
+        },
+        {
+            -- box interior (always drawn, darker)
+            pass_type = "rect",
+            style     = {
+                horizontal_alignment = "left",
+                vertical_alignment   = "center",
+                size                 = { BOX - 4, BOX - 4 },
+                offset               = { box_x + 2, 0, 6 },
+                color                = { 255, 15, 15, 18 },
+            },
+        },
+        {
+            -- checked fill
+            pass_type = "rect",
+            style     = {
+                horizontal_alignment = "left",
+                vertical_alignment   = "center",
+                size                 = { BOX - 10, BOX - 10 },
+                offset               = { box_x + 5, 0, 7 },
+                color                = { 255, 220, 170, 60 },
+            },
+            visibility_function = function(content)
+                return content.inverted
+            end,
+        },
+    }
+end
+
 EmperorsTouchView._clear_hook_panel = function(self)
     self:close_focused_dropdown()
 
@@ -288,8 +378,11 @@ EmperorsTouchView._build_hook_panel = function(self, toy)
     local toy_id    = toy.id
     local hooks     = mod.HOOKS or {}
 
+    local inversions = mod:get_inversions()
+
     for i, hook in ipairs(hooks) do
         local hook_id = hook.id
+        local is_poll = hook.kind == "poll"
         local entry = {
             header_text = hook.name,
             size        = { 960, ROW_H },   -- label gets 960 - value_width; wide enough for long hook names
@@ -305,9 +398,20 @@ EmperorsTouchView._build_hook_panel = function(self, toy)
                 self._assign_cache[hook_id][toy_id] = preset_id
                 mod:assign_preset(hook_id, toy_id, preset_id)
             end,
+            -- Only continuous (poll) hooks have a scale to invert
+            extra_passes = is_poll and invert_checkbox_passes(960, 320) or nil,
         }
 
         local widget = DropdownHelper.create(self, "hook_panel_row_" .. i, "hook_grid_content_pivot", entry)
+
+        if is_poll then
+            local content = widget.content
+            content.inverted = inversions[hook_id] and inversions[hook_id][toy_id] or false
+            content.on_invert_toggled = function(inverted)
+                mod:set_inverted(hook_id, toy_id, inverted)
+            end
+        end
+
         self._hook_panel_widgets[#self._hook_panel_widgets + 1] = widget
     end
 

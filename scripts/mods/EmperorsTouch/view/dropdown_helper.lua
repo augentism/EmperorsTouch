@@ -43,7 +43,14 @@ DropdownHelper.create = function(view, name, scenegraph_id, entry)
     end
 
     local passes = dropdown_blueprint.pass_template_function(view, entry, entry.size)
-    local def    = UIWidget.create_definition(passes, scenegraph_id, nil, entry.size)
+
+    -- Caller-supplied passes rendered as part of the row (e.g. an inline
+    -- checkbox next to the dropdown box)
+    for _, pass in ipairs(entry.extra_passes or {}) do
+        passes[#passes + 1] = pass
+    end
+
+    local def = UIWidget.create_definition(passes, scenegraph_id, nil, entry.size)
     local widget = view:_create_widget(name, def)
 
     dropdown_blueprint.init(view, widget, entry, "cb_on_dropdown_pressed", "cb_on_dropdown_changed")

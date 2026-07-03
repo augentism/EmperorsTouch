@@ -291,6 +291,20 @@ function mod:assign_preset(hook_id, toy_id, preset_id)
     mod:set_assignments(a)
 end
 
+-- inversions: { [hook_id] = { [toy_id] = true } }
+-- When set for a poll hook, the intensity scale is flipped (1 - scale),
+-- e.g. Health Level becomes "stronger when hurt".
+function mod:get_inversions()
+    return mod:get("inversions") or {}
+end
+
+function mod:set_inverted(hook_id, toy_id, inverted)
+    local inv = mod:get_inversions()
+    inv[hook_id] = inv[hook_id] or {}
+    inv[hook_id][toy_id] = inverted and true or nil
+    mod:set("inversions", inv)
+end
+
 -- ===== Load hook logic =====
 
 mod:io_dofile("EmperorsTouch/scripts/mods/EmperorsTouch/logic/dispatch")
@@ -298,7 +312,13 @@ mod:io_dofile("EmperorsTouch/scripts/mods/EmperorsTouch/logic/hooks")
 
 -- ===== Poll loop for continuous hooks =====
 
-local last_poll = {}   -- [hook_id] = clock seconds of last poll
+local last_poll  = {}   -- [hook_id] = clock seconds of last poll
+local nil_polls  = {}   -- [hook_id] = consecutive polls that returned nil
+
+-- After this many consecutive nil polls the hook's output is zeroed, so a
+-- vanished source (death, overload, leaving Psyker gameplay) can't leave a
+-- toy stuck at its last intensity.
+local NIL_POLLS_BEFORE_STOP = 3
 
 function mod.update(dt)
     local now = mod:clock()
@@ -308,7 +328,14 @@ function mod.update(dt)
             last_poll[hook.id] = now
             local ok, scale = pcall(hook.poll)
             if ok and scale ~= nil then
+                nil_polls[hook.id] = 0
                 mod:dispatch_hook(hook.id, scale)
+            else
+                local n = (nil_polls[hook.id] or 0) + 1
+                nil_polls[hook.id] = n
+                if n == NIL_POLLS_BEFORE_STOP then
+                    mod:stop_hook(hook.id)
+                end
             end
         end
     end

@@ -44,6 +44,21 @@ local function is_local_player(unit)
     return player and unit == player.player_unit
 end
 
+-- Returns the local player's peril/warp charge fraction (0..1), or nil if
+-- unavailable (not a Psyker, not in a mission). Reads the warp_charge
+-- component from the unit_data extension, same as Skitarius does.
+local function local_peril_fraction()
+    local unit = local_player_unit()
+    if not unit then return nil end
+    local ok, frac = pcall(function()
+        local ext = ScriptUnit.has_extension(unit, "unit_data_system")
+        local warp_charge = ext and ext:read_component("warp_charge")
+        return warp_charge and warp_charge.current_percentage
+    end)
+    if ok and frac then return frac end
+    return nil
+end
+
 -- ===== Registry =====
 -- cooldown: minimum seconds between this hook's own dispatches.
 -- interval (poll only): seconds between poll() evaluations.
@@ -64,6 +79,28 @@ local HOOKS = {
         -- Full strength at full health, off when downed. Invert in a future
         -- preset option if "stronger when hurt" is wanted.
         poll     = function() return local_health_fraction() end,
+    },
+    {
+        id       = "peril_pct",
+        name     = "Peril Level (Continuous)",
+        kind     = "poll",
+        interval = 0.25,
+        cooldown = 0.1,
+        -- 0 at no peril, 1 at max. Non-Psykers have no warp_charge
+        -- component, so poll returns nil and the hook stays idle.
+        poll     = function() return local_peril_fraction() end,
+    },
+    {
+        id       = "on_overload",
+        name     = "Peril Overload",
+        kind     = "event",
+        cooldown = 4,   -- overload anim lasts ~4s; no double-fires
+    },
+    {
+        id       = "on_knocked_down",
+        name     = "Knocked Down",
+        kind     = "event",
+        cooldown = 5,
     },
     {
         id       = "on_victory",
@@ -116,6 +153,41 @@ mod:hook_safe(CLASS.GameModeManager, "_set_end_conditions_met", function(self, o
         mod:dispatch_hook("on_victory")
     elseif outcome == "lost" then
         mod:dispatch_hook("on_defeat")
+    end
+end)
+
+-- Knocked down: Darktide models this as a character state (the Vermintide
+-- PlayerUnitHealthExtension:_knock_down equivalent). on_enter receives the
+-- downed unit; only fire for the local player.
+mod:hook_safe(CLASS.PlayerCharacterStateKnockedDown, "on_enter", function(self, unit, ...)
+    local ok, is_me = pcall(is_local_player, unit)
+    if ok and is_me then
+        mod:dispatch_hook("on_knocked_down")
+    end
+end)
+
+-- Peril overload: fires when the local player's weapon action transitions
+-- to the warp-charge explosion. Watched per-frame from the player buffs
+-- HUD element (same detection peril_tracker uses).
+local last_action_name = nil
+
+mod:hook_safe(CLASS.HudElementPlayerBuffs, "_update_buffs", function(self)
+    if self.__class_name ~= "HudElementPlayerBuffs" or self._filter then return end
+
+    local player_extensions = self._parent and self._parent:player_extensions()
+    local unit_data = player_extensions and player_extensions.unit_data
+    if not unit_data then return end
+
+    local ok, current_action = pcall(function()
+        return unit_data:read_component("weapon_action").current_action_name
+    end)
+    if not ok or not current_action then return end
+
+    if current_action ~= last_action_name then
+        if current_action == "action_warp_charge_explode" then
+            mod:dispatch_hook("on_overload")
+        end
+        last_action_name = current_action
     end
 end)
 
