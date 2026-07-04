@@ -218,11 +218,20 @@ function mod:make_toy_command(opts)
         parts[#parts + 1] = string.format("%s:%d", action, strength)
     end
 
+    -- stopPrevious semantics (verified on hardware):
+    --   1 (API default) = kill everything running, then apply. Right for
+    --     event bursts and stops; wrong for ramps (stutters every step).
+    --   0 = apply without stopping what's running. Right for continuous
+    --     ramp updates; wrong for bursts (the running command wins and the
+    --     burst never manifests).
+    -- Dispatch coordinates the two: bursts pass stop_previous = true and
+    -- continuous updates are held back per-toy while a burst is running.
     local cmd = {
         command = "Function",
         action  = table.concat(parts, ","),
         timeSec = opts.duration or 0,
         apiVer  = 1,
+        stopPrevious = opts.stop_previous and 1 or 0,
     }
 
     local ids = resolve_toy_ids(opts.toy)
@@ -241,7 +250,7 @@ end
 -- Convenience factory for stopping: all actions on one toy, or everything.
 -- Uses the API's dedicated "Stop" action, which halts every function.
 function mod:make_stop_command(toy)
-    local cmd = mod:make_toy_command({ actions = {}, toy = toy })
+    local cmd = mod:make_toy_command({ actions = {}, toy = toy, stop_previous = true })
     cmd.action = "Stop"
     return cmd
 end

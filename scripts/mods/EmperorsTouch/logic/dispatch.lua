@@ -22,6 +22,19 @@ local last_fire     = {}      -- [hook_id] = clock seconds of last send
 local last_scale    = {}      -- [hook_id] = last scale actually sent
 local last_any_fire = -math.huge
 
+-- Per-toy "hold" window: while now < hold_until[toy_id], continuous (poll)
+-- hooks skip that toy so a timed burst (e.g. Knocked Down) isn't overwritten
+-- mid-flight by the next Health/Peril poll tick. Event hooks always fire
+-- regardless of holds — a burst is allowed to interrupt another burst or a
+-- continuous hook, it just also claims the toy for its own duration.
+local hold_until = {}
+
+-- Poll hooks that skipped a held toy. While set, the epsilon check is
+-- bypassed so the hook re-sends its level as soon as the hold expires —
+-- otherwise the toy would sit silent after the burst until the value
+-- happened to move more than SCALE_EPSILON.
+local pending_reassert = {}
+
 -- Monotonic clock for debounce. Prefers the always-running "main" timer.
 function mod:clock()
     local tm = Managers.time
@@ -53,12 +66,16 @@ function mod:dispatch_hook(hook_id, scale)
     if now - (last_fire[hook_id] or -math.huge) < (hook.cooldown or 0) then
         return
     end
-    -- Global minimum gap across all hooks
-    if now - last_any_fire < GLOBAL_MIN_GAP then
+    -- Global minimum gap applies to poll traffic only. Event hooks are
+    -- exempt: they are rare, cooldown-protected, and fire exactly once per
+    -- trigger — dropping one here loses it entirely (e.g. an overload burst
+    -- always lands right after the peril poll that just sent 100%).
+    if hook.kind == "poll" and now - last_any_fire < GLOBAL_MIN_GAP then
         return
     end
-    -- Poll change-threshold: skip near-identical intensities
-    if scale ~= nil and last_scale[hook_id] ~= nil then
+    -- Poll change-threshold: skip near-identical intensities (unless a
+    -- hold ended and this hook still owes its toys a re-assert)
+    if scale ~= nil and last_scale[hook_id] ~= nil and not pending_reassert[hook_id] then
         if math.abs(scale - last_scale[hook_id]) < SCALE_EPSILON then
             return
         end
@@ -74,19 +91,31 @@ function mod:dispatch_hook(hook_id, scale)
 
     -- Group connected, assigned toys by preset id + inversion flag, since
     -- inverted toys get a different scale and need their own request.
+    -- Poll (continuous) hooks skip any toy currently held by a burst.
     local live = connected_ids()
+    local skipped_held = false
     local groups = {}   -- [key] = { preset_id, inverted, toy_ids }
     for toy_id, preset_id in pairs(hook_assign) do
         if preset_id and live[toy_id] and presets[preset_id] then
-            local inverted = hook_inv[toy_id] and true or false
-            local key = preset_id .. (inverted and "|inv" or "")
-            local group = groups[key]
-            if not group then
-                group = { preset_id = preset_id, inverted = inverted, toy_ids = {} }
-                groups[key] = group
+            if hook.kind == "poll" and (hold_until[toy_id] or 0) > now then
+                skipped_held = true
+            else
+                local inverted = hook_inv[toy_id] and true or false
+                local key = preset_id .. (inverted and "|inv" or "")
+                local group = groups[key]
+                if not group then
+                    group = { preset_id = preset_id, inverted = inverted, toy_ids = {} }
+                    groups[key] = group
+                end
+                group.toy_ids[#group.toy_ids + 1] = toy_id
             end
-            group.toy_ids[#group.toy_ids + 1] = toy_id
         end
+    end
+
+    -- Track the re-assert debt: set while any toy is held, cleared once a
+    -- dispatch reaches every assigned toy again.
+    if hook.kind == "poll" then
+        pending_reassert[hook_id] = skipped_held or nil
     end
 
     -- One request per distinct preset+inversion, batching its toys
@@ -103,9 +132,22 @@ function mod:dispatch_hook(hook_id, scale)
             loop_on  = p.loop_on,
             loop_off = p.loop_off,
             toy      = group.toy_ids,
+            -- Testing without stopPrevious on bursts: the hold window +
+            -- event gap exemption may be sufficient arbitration on their
+            -- own. If bursts fail to register over an active continuous
+            -- vibe, restore: stop_previous = hook.kind ~= "poll"
+            stop_previous = false,
         })
         mod:send_toy_command(cmd)
         sent = sent + 1
+
+        -- A timed, non-continuous burst claims its toys for its duration
+        if hook.kind ~= "poll" and p.duration and p.duration > 0 then
+            local until_t = now + p.duration
+            for _, toy_id in ipairs(group.toy_ids) do
+                hold_until[toy_id] = math.max(hold_until[toy_id] or 0, until_t)
+            end
+        end
     end
 
     if sent > 0 then
@@ -154,5 +196,7 @@ end
 function mod:reset_dispatch()
     table.clear(last_fire)
     table.clear(last_scale)
+    table.clear(hold_until)
+    table.clear(pending_reassert)
     last_any_fire = -math.huge
 end

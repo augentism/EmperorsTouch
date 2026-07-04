@@ -87,8 +87,8 @@ local HOOKS = {
         id       = "health_pct",
         name     = "Health Level (Continuous)",
         kind     = "poll",
-        interval = 0.25,
-        cooldown = 0.1,
+        interval = 0.5,
+        cooldown = 0.4,
         -- Full strength at full health, off when downed. Invert in a future
         -- preset option if "stronger when hurt" is wanted.
         poll     = function() return local_health_fraction() end,
@@ -97,8 +97,8 @@ local HOOKS = {
         id       = "peril_pct",
         name     = "Peril Level (Continuous)",
         kind     = "poll",
-        interval = 0.25,
-        cooldown = 0.1,
+        interval = 0.5,
+        cooldown = 0.4,
         -- 0 at no peril, 1 at max. Non-Psykers have no warp_charge
         -- component, so poll returns nil and the hook stays idle.
         poll     = function() return local_peril_fraction() end,
@@ -239,28 +239,15 @@ end
 -- Each game hook simply calls mod:dispatch_hook(id); dispatch handles
 -- debounce, grouping, and sending.
 
--- Attack results where the target's HEALTH actually took damage — not
--- dodges, blocks, or hits fully absorbed by toughness/shields.
-local HEALTH_DAMAGE_RESULTS = {
-    damaged    = true,
-    died       = true,
-    knock_down = true,
-}
-
 -- hook_safe callbacks receive the original arguments directly (no `func`
 -- first parameter — that is only for mod:hook).
--- Health damage taken (attacked == me) and elite kills (attacker == me,
--- target died with the elite/special breed tag) both come from the attack
--- report.
+-- Elite kills (attacker == me, target died with the elite/special breed
+-- tag) come from the attack report. NOTE: the attack report is NOT used
+-- for damage taken — minion→player hits don't reliably pass through it
+-- (scoreboard reads the husk health extension for the same reason).
+-- Health damage taken is detected by watching the health fraction drop
+-- (see the per-frame watcher below).
 mod:hook_safe(CLASS.AttackReportManager, "add_attack_result", function(self, damage_profile, attacked_unit, attacking_unit, attack_direction, hit_world_position, hit_weakspot, damage, attack_result, ...)
-    local ok, hit_me = pcall(is_local_player, attacked_unit)
-    if ok and hit_me then
-        if HEALTH_DAMAGE_RESULTS[attack_result] then
-            mod:dispatch_hook("on_damage_taken")
-        end
-        return
-    end
-
     if attack_result == "died" then
         local ok_kill, my_elite_kill = pcall(function()
             if not is_local_player(attacking_unit) then return false end
@@ -376,10 +363,14 @@ mod:hook_safe(CLASS.StateGameplay, "on_enter", function(self, parent, params, ..
     end
 end)
 
--- Peril overload: fires when the local player's weapon action transitions
--- to the warp-charge explosion. Watched per-frame from the player buffs
--- HUD element (same detection peril_tracker uses).
-local last_action_name = nil
+-- Per-frame watcher on the local player (via the player buffs HUD element,
+-- same technique peril_tracker uses):
+--  * Peril overload: weapon action transitions to the warp-charge explosion.
+--  * Health damage taken: the health fraction dropped since last frame.
+--    (The attack report stream doesn't reliably carry minion→player hits,
+--    so we watch the value itself. Catches melee, ranged, and DoT alike.)
+local last_action_name  = nil
+local last_health_frac  = nil
 
 mod:hook_safe(CLASS.HudElementPlayerBuffs, "_update_buffs", function(self)
     if self.__class_name ~= "HudElementPlayerBuffs" or self._filter then return end
@@ -388,16 +379,28 @@ mod:hook_safe(CLASS.HudElementPlayerBuffs, "_update_buffs", function(self)
     local unit_data = player_extensions and player_extensions.unit_data
     if not unit_data then return end
 
+    -- Overload detection
     local ok, current_action = pcall(function()
         return unit_data:read_component("weapon_action").current_action_name
     end)
-    if not ok or not current_action then return end
-
-    if current_action ~= last_action_name then
+    if ok and current_action and current_action ~= last_action_name then
         if current_action == "action_warp_charge_explode" then
             mod:dispatch_hook("on_overload")
         end
         last_action_name = current_action
+    end
+
+    -- Health-drop detection
+    local health_frac = local_health_fraction()
+    if health_frac then
+        if last_health_frac and health_frac < last_health_frac - 0.001 then
+            mod:dispatch_hook("on_damage_taken")
+        end
+        last_health_frac = health_frac
+    else
+        -- Unit gone (death, end of round): forget, so respawning at full
+        -- health doesn't register as a change.
+        last_health_frac = nil
     end
 end)
 

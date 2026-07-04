@@ -353,11 +353,12 @@ PresetEditorView.cb_test_preset = function(self)
     if duration <= 0 then duration = 3 end
 
     local cmd = mod:make_toy_command({
-        actions  = mod:scale_actions(preset.actions, 1),
-        duration = duration,
-        loop_on  = preset.loop_on,
-        loop_off = preset.loop_off,
-        toy      = target_id,
+        actions       = mod:scale_actions(preset.actions, 1),
+        duration      = duration,
+        loop_on       = preset.loop_on,
+        loop_off      = preset.loop_off,
+        toy           = target_id,
+        stop_previous = true,
     })
     mod:send_toy_command(cmd, function(ok, err)
         if ok then
