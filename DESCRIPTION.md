@@ -26,16 +26,15 @@ all configured from inside the game, no files to edit.
 
 ## Main features
 
-- **17 game hooks** and counting:
+- **20 game hooks** and counting:
   - *Continuous:* Health Level, Peril Level — intensity scales with the
     value, with a per-toy **Invert** option (e.g. stronger as you get hurt)
   - *Combat events:* Health Damage Taken, Toughness Broken (full break),
-    Elite/Special Killed, Ability Used, Backstab Warning
+    Elite/Special Killed, Ability Used, Backstab Warning, Peril Overload
   - *Disabler grabs:* Trapper net, Hound pounce, Mutant grab, Chaos Spawn
     grab, Beast of Nurgle swallow
-  - *Squad & mission:* Knocked Down, Player Death, Ally Down, Ally Death,
-    Mission Start, Boss Spawned, Hacking Complete, Mission Victory,
-    Mission Defeat
+  - *Squad & mission:* Knocked Down, Player Death, Mission Start,
+    Boss Spawned, Hacking Complete, Mission Victory, Mission Defeat
 - **In-game preset editor** (default **F9**): create named presets with
   sliders for every Lovense action — Vibrate, Rotate, Pump, Thrusting,
   Fingering, Suction, Depth, Stroke, Oscillate — plus duration and loop

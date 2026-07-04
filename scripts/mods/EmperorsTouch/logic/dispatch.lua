@@ -132,20 +132,24 @@ function mod:dispatch_hook(hook_id, scale)
             loop_on  = p.loop_on,
             loop_off = p.loop_off,
             toy      = group.toy_ids,
-            -- Testing without stopPrevious on bursts: the hold window +
-            -- event gap exemption may be sufficient arbitration on their
-            -- own. If bursts fail to register over an active continuous
-            -- vibe, restore: stop_previous = hook.kind ~= "poll"
-            stop_previous = false,
+            -- Bursts interrupt (stopPrevious 1): hardware ignores a new
+            -- command while an old one runs, so without this a newer event
+            -- is hidden by an older burst still playing. Continuous stays
+            -- at 0 so ramp steps don't stop-restart; the per-toy hold +
+            -- re-assert handles resuming continuous after a burst.
+            stop_previous = hook.kind ~= "poll",
         })
         mod:send_toy_command(cmd)
         sent = sent + 1
 
-        -- A timed, non-continuous burst claims its toys for its duration
+        -- A timed, non-continuous burst claims its toys for its duration.
+        -- The newest burst's window REPLACES any existing hold (it also
+        -- interrupted the previous burst via stopPrevious), so continuous
+        -- output resumes as soon as the currently-playing burst ends.
         if hook.kind ~= "poll" and p.duration and p.duration > 0 then
             local until_t = now + p.duration
             for _, toy_id in ipairs(group.toy_ids) do
-                hold_until[toy_id] = math.max(hold_until[toy_id] or 0, until_t)
+                hold_until[toy_id] = until_t
             end
         end
     end

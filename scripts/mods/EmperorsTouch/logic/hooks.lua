@@ -44,19 +44,6 @@ local function is_local_player(unit)
     return player and unit == player.player_unit
 end
 
--- True if unit belongs to another human-controlled player (an ally).
-local function is_other_human_player(unit)
-    if not unit or not Managers.player then return false end
-    local local_player = Managers.player:local_player_safe(1)
-    if local_player and unit == local_player.player_unit then return false end
-    for _, player in pairs(Managers.player:players()) do
-        if player.player_unit == unit then
-            return player:is_human_controlled()
-        end
-    end
-    return false
-end
-
 -- Returns the local player's peril/warp charge fraction (0..1), or nil if
 -- unavailable (not a Psyker, not in a mission). Reads the warp_charge
 -- component from the unit_data extension, same as Skitarius does.
@@ -188,18 +175,6 @@ local HOOKS = {
         cooldown = 1,
     },
     {
-        id       = "on_ally_down",
-        name     = "Ally Knocked Down",
-        kind     = "event",
-        cooldown = 3,
-    },
-    {
-        id       = "on_ally_death",
-        name     = "Ally Death",
-        kind     = "event",
-        cooldown = 5,
-    },
-    {
         id       = "on_hack_complete",
         name     = "Hacking Complete",
         kind     = "event",
@@ -274,24 +249,18 @@ end)
 
 -- Disabler states + death. Darktide models each as a character state (the
 -- Vermintide PlayerUnitHealthExtension:_knock_down equivalent); on_enter
--- receives the affected unit. Knocked down / dead also fire ally variants
--- when the unit is another human-controlled player.
-local function state_event(state_class, my_hook_id, ally_hook_id)
+-- receives the affected unit; only fire for the local player.
+local function state_event(state_class, my_hook_id)
     mod:hook_safe(state_class, "on_enter", function(self, unit, ...)
         local ok, is_me = pcall(is_local_player, unit)
         if ok and is_me then
             mod:dispatch_hook(my_hook_id)
-        elseif ally_hook_id then
-            local ok_ally, is_ally = pcall(is_other_human_player, unit)
-            if ok_ally and is_ally then
-                mod:dispatch_hook(ally_hook_id)
-            end
         end
     end)
 end
 
-state_event(CLASS.PlayerCharacterStateKnockedDown,   "on_knocked_down", "on_ally_down")
-state_event(CLASS.PlayerCharacterStateDead,          "on_death",        "on_ally_death")
+state_event(CLASS.PlayerCharacterStateKnockedDown,   "on_knocked_down")
+state_event(CLASS.PlayerCharacterStateDead,          "on_death")
 state_event(CLASS.PlayerCharacterStateMutantCharged, "on_grabbed_mutant")
 state_event(CLASS.PlayerCharacterStateNetted,        "on_netted")
 state_event(CLASS.PlayerCharacterStatePounced,       "on_pounced")
