@@ -11,4 +11,13 @@ return {
 	stop_all_toys = {
 		en = "Stop All Toys",
 	},
+	backend = {
+		en = "Toy Backend",
+	},
+	backend_lovense_remote = {
+		en = "Lovense Remote (this PC)",
+	},
+	backend_bridge = {
+		en = "Local Bridge (Intiface / relay)",
+	},
 }

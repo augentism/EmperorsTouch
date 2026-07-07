@@ -175,6 +175,18 @@ local HOOKS = {
         cooldown = 1,
     },
     {
+        id       = "on_cheer",
+        name     = "For the Emperor! (You)",
+        kind     = "event",
+        cooldown = 1,
+    },
+    {
+        id       = "on_ally_cheer",
+        name     = "For the Emperor! (Ally)",
+        kind     = "event",
+        cooldown = 1,
+    },
+    {
         id       = "on_hack_complete",
         name     = "Hacking Complete",
         kind     = "event",
@@ -370,6 +382,30 @@ mod:hook_safe(CLASS.HudElementPlayerBuffs, "_update_buffs", function(self)
         -- Unit gone (death, end of round): forget, so respawning at full
         -- health doesn't register as a change.
         last_health_frac = nil
+    end
+end)
+
+-- "For the Emperor!" com-wheel cheer. The VO plays through this dialogue
+-- system method on every machine (host directly, clients via
+-- rpc_play_dialogue_event), so it catches any player's cheer; the actor
+-- unit tells us whose it was. The dialogue rule itself also has a 5s
+-- per-character cooldown game-side.
+mod:hook_safe(CLASS.DialogueSystem, "_play_dialogue_event_implementation", function(self, go_id, is_level_unit, level_name_hash, dialogue_id, ...)
+    local ok, is_cheer = pcall(function()
+        return NetworkLookup.dialogue_names[dialogue_id] == "com_wheel_vo_for_the_emperor"
+    end)
+    if not ok or not is_cheer then return end
+
+    local ok_unit, unit = pcall(function()
+        return Managers.state.unit_spawner:unit(go_id, is_level_unit, level_name_hash)
+    end)
+    if not ok_unit or not unit then return end
+
+    local ok_me, is_me = pcall(is_local_player, unit)
+    if ok_me and is_me then
+        mod:dispatch_hook("on_cheer")
+    else
+        mod:dispatch_hook("on_ally_cheer")
     end
 end)
 

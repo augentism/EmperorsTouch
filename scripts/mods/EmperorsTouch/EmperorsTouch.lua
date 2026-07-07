@@ -4,10 +4,14 @@ mod:io_dofile("EmperorsTouch/scripts/mods/EmperorsTouch/libs/json")
 
 local VIEW_NAME = "emperors_touch_view"
 
--- Lovense API endpoint: Lovense Remote running on this same PC.
--- For proxy-based testing (phone app / simulated toys) use
--- http://localhost:5000/command with server.py running.
-local LOVENSE_URL = "https://127-0-0-1.lovense.club:30010/command"
+-- Both ports are fixed: Lovense Remote always serves on 30010, and the
+-- bridge always listens on 20010 (bridge/bridge.py matches).
+local function lovense_url()
+    if mod:get("backend") == "bridge" then
+        return "http://localhost:20010/command"
+    end
+    return "https://127-0-0-1.lovense.club:30010/command"
+end
 
 local function register_view()
     mod:add_require_path("EmperorsTouch/scripts/mods/EmperorsTouch/view/emperors_touch_view")
@@ -89,7 +93,7 @@ register_preset_editor_view()
 -- Sends a command table to the Lovense API. on_done(body, err) is called
 -- with the decoded response body, or nil + error message.
 function mod:send_command(command_table, on_done)
-    Managers.backend:url_request(LOVENSE_URL, {
+    Managers.backend:url_request(lovense_url(), {
         method = "POST",
         body   = command_table,
     }):next(function(result)

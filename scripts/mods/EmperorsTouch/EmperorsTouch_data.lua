@@ -7,6 +7,15 @@ return {
 	options = {
 		widgets = {
 			{
+				setting_id    = "backend",
+				type          = "dropdown",
+				default_value = "lovense_remote",
+				options       = {
+					{ text = "backend_lovense_remote", value = "lovense_remote" },
+					{ text = "backend_bridge",         value = "bridge" },
+				},
+			},
+			{
 				setting_id      = "open_emperors_touch_view",
 				type            = "keybind",
 				default_value   = { "f10" },
