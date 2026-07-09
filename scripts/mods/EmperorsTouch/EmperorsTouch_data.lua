@@ -32,6 +32,11 @@ return {
 				view_name       = "emperors_touch_preset_editor",
 			},
 			{
+				setting_id    = "debug_logging",
+				type          = "checkbox",
+				default_value = false,
+			},
+			{
 				setting_id      = "stop_all_toys",
 				type            = "keybind",
 				default_value   = { "f11" },

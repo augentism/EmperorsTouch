@@ -20,4 +20,7 @@ return {
 	backend_bridge = {
 		en = "Local Bridge (Intiface / relay)",
 	},
+	debug_logging = {
+		en = "Debug Logging (verbose; enable when reporting issues)",
+	},
 }

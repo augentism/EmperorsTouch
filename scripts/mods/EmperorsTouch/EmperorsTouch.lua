@@ -88,18 +88,53 @@ end
 
 register_preset_editor_view()
 
+-- ===== Logging =====
+
+-- Console/log-file only, never chat. NOTE: DMF logging re-string.formats
+-- its message, so literal % must be escaped.
+local function console_log(msg)
+    mod:info(tostring(msg):gsub("%%", "%%%%"))
+end
+
+-- Verbose diagnostics, gated behind the Debug Logging mod option.
+function mod:debug_log(msg)
+    if mod:get("debug_logging") then
+        console_log(msg)
+    end
+end
+
+-- Compact one-line description of an outgoing command table.
+local function describe_command(cmd)
+    local toy = cmd.toy
+    if type(toy) == "table" then toy = table.concat(toy, ",") end
+    local parts = { "command=" .. tostring(cmd.command) }
+    if cmd.action         then parts[#parts + 1] = "action=" .. tostring(cmd.action) end
+    if toy                then parts[#parts + 1] = "toy=" .. tostring(toy) end
+    if cmd.timeSec        then parts[#parts + 1] = "timeSec=" .. tostring(cmd.timeSec) end
+    if cmd.loopRunningSec then parts[#parts + 1] = "loopOn=" .. tostring(cmd.loopRunningSec) end
+    if cmd.loopPauseSec   then parts[#parts + 1] = "loopOff=" .. tostring(cmd.loopPauseSec) end
+    if cmd.stopPrevious   then parts[#parts + 1] = "stopPrevious=" .. tostring(cmd.stopPrevious) end
+    return table.concat(parts, " ")
+end
+
 -- ===== Lovense API =====
 
 -- Sends a command table to the Lovense API. on_done(body, err) is called
 -- with the decoded response body, or nil + error message.
 function mod:send_command(command_table, on_done)
+    mod:debug_log("POST " .. describe_command(command_table))
     Managers.backend:url_request(lovense_url(), {
         method = "POST",
         body   = command_table,
     }):next(function(result)
-        on_done(result and result.body, nil)
+        local body = result and result.body
+        mod:debug_log("Response: code=" .. tostring(body and body.code)
+            .. " type=" .. tostring(body and body.type))
+        on_done(body, nil)
     end):catch(function(err)
-        on_done(nil, err and err.description or tostring(err))
+        local message = err and err.description or tostring(err)
+        mod:debug_log("Request error: " .. message)
+        on_done(nil, message)
     end)
 end
 
@@ -135,6 +170,9 @@ function mod:get_toys(on_done)
             on_done(mod.toys, nil)
             return
         end
+
+        mod:debug_log("GetToys raw toys: " .. tostring(toys_str))
+
         local toys_by_id, decode_err = mod.json.decode(toys_str)
         if not toys_by_id then
             on_done(nil, "Failed to decode toys: " .. tostring(decode_err))
@@ -144,9 +182,22 @@ function mod:get_toys(on_done)
         local toys = {}
         for id, toy in pairs(toys_by_id) do
             toy.id = toy.id or id
+            -- Normalize across app variants: the phone app sends status as
+            -- the string "1", desktop Remote as the number 1. Desktop
+            -- Remote omits battery entirely — keep it nil (unknown), not 0.
+            toy.battery = tonumber(toy.battery)
+            toy.status  = tostring(toy.status or "")
             toys[#toys + 1] = toy
         end
         table.sort(toys, function(a, b) return (a.name or "") < (b.name or "") end)
+
+        for _, toy in ipairs(toys) do
+            mod:debug_log(string.format(
+                "GetToys parsed: id=%s name=%s nickName=%s battery=%s status=%s",
+                tostring(toy.id), tostring(toy.name), tostring(toy.nickName),
+                tostring(toy.battery), tostring(toy.status)
+            ))
+        end
 
         mod.toys = toys
         on_done(toys, nil)
@@ -259,6 +310,24 @@ function mod:make_stop_command(toy)
     return cmd
 end
 
+-- Chat gets at most one copy of the same failure per window; the full
+-- stream always goes to the console log.
+local ERROR_ECHO_WINDOW = 10
+local last_error_msg    = nil
+local last_error_time   = -math.huge
+
+local function echo_toy_error(err)
+    local msg = "Toy command failed: " .. tostring(err)
+    console_log(msg)
+
+    local now = mod:clock()
+    if msg ~= last_error_msg or now - last_error_time >= ERROR_ECHO_WINDOW then
+        mod:echo(msg)
+        last_error_msg  = msg
+        last_error_time = now
+    end
+end
+
 -- Sends a command produced by make_toy_command. on_done(ok, err) is
 -- optional; ok is true when the app reports success.
 function mod:send_toy_command(cmd, on_done)
@@ -270,7 +339,7 @@ function mod:send_toy_command(cmd, on_done)
         if on_done then
             on_done(ok, err)
         elseif err then
-            mod:echo("Toy command failed: " .. tostring(err))
+            echo_toy_error(err)
         end
     end)
 end

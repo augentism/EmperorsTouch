@@ -46,10 +46,13 @@ function mod:clock()
 end
 
 -- Set of currently-connected toy ids, for filtering stale assignments.
+-- GetToys can list previously-paired toys that are not currently connected
+-- (status ~= "1"); dispatching to those gets a 401 "toy not found" from
+-- the app, so they are excluded here.
 local function connected_ids()
     local set = {}
     for _, toy in ipairs(mod.toys or {}) do
-        if toy.id then set[toy.id] = true end
+        if toy.id and toy.status == "1" then set[toy.id] = true end
     end
     return set
 end
@@ -126,7 +129,7 @@ function mod:dispatch_hook(hook_id, scale)
         if scale ~= nil and group.inverted then
             effective_scale = 1 - scale
         end
-        local cmd = mod:make_toy_command({
+        local opts = {
             actions  = mod:scale_actions(p.actions, effective_scale),
             duration = p.duration,
             loop_on  = p.loop_on,
@@ -138,8 +141,24 @@ function mod:dispatch_hook(hook_id, scale)
             -- at 0 so ramp steps don't stop-restart; the per-toy hold +
             -- re-assert handles resuming continuous after a burst.
             stop_previous = hook.kind ~= "poll",
-        })
-        mod:send_toy_command(cmd)
+        }
+
+        if #group.toy_ids > 1 then
+            -- Batched (array `toy`) request. Some app versions reject the
+            -- array form; fall back to one request per toy on failure.
+            mod:send_toy_command(mod:make_toy_command(opts), function(ok, err)
+                if ok then return end
+                mod:debug_log("Batched command failed (" .. tostring(err)
+                    .. "); retrying per-toy")
+                for _, toy_id in ipairs(group.toy_ids) do
+                    local single = table.clone(opts)
+                    single.toy = toy_id
+                    mod:send_toy_command(mod:make_toy_command(single))
+                end
+            end)
+        else
+            mod:send_toy_command(mod:make_toy_command(opts))
+        end
         sent = sent + 1
 
         -- A timed, non-continuous burst claims its toys for its duration.

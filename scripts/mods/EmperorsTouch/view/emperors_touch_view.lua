@@ -31,12 +31,19 @@ local function toy_to_entry(toy)
         title = string.format("%s (%s)", nickname, title)
     end
 
-    local status = toy.status == "1" and "Connected" or "Disconnected"
+    -- status is normalized to a string in get_toys; "1"/"true" = connected
+    local status_str = tostring(toy.status or "")
+    local status = (status_str == "1" or status_str == "true") and "Connected" or "Disconnected"
+
+    -- Desktop Lovense Remote doesn't report battery; show "?" not a fake 0
+    local battery = tonumber(toy.battery)
+    local battery_str = battery and (battery .. "%") or "?"
 
     return {
         widget_type = "toy_button",
         title       = title,
-        subtitle    = string.format("Battery: %d%%  |  %s  |  id: %s", toy.battery or 0, status, toy.id or "?"),
+        subtitle    = string.format("Battery: %s  |  %s  |  id: %s",
+            battery_str, status, toy.id or "?"),
         toy         = toy,
     }
 end
