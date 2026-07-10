@@ -59,6 +59,60 @@ local function local_peril_fraction()
     return nil
 end
 
+-- Nearest-bomber proximity: broadphase query around the player (same
+-- pattern the minimap mod uses for its enemy radar), filtered to the
+-- poxwalker bomber breed. Returns 1 at touch range fading to 0 at
+-- BOMBER_MAX_RANGE, or nil when no bomber is in range (the nil-poll stop
+-- then winds the output down).
+local BOMBER_BREED     = "chaos_poxwalker_bomber"
+local BOMBER_MAX_RANGE = 25
+local bomber_query_results = {}
+
+local function bomber_proximity_scale()
+    local unit = local_player_unit()
+    if not unit then return nil end
+
+    local ok, scale = pcall(function()
+        if not Unit.alive(unit) then return nil end
+
+        local ext_manager = Managers.state.extension
+        if not ext_manager then return nil end
+        local broadphase_system = ext_manager:system("broadphase_system")
+        local broadphase = broadphase_system and broadphase_system.broadphase
+        if not broadphase then return nil end
+        local side_system = ext_manager:system("side_system")
+        local side = side_system and side_system.side_by_unit[unit]
+        if not side then return nil end
+
+        local from_pos = Unit.world_position(unit, 1)
+        local enemy_side_names = side:relation_side_names("enemy")
+
+        table.clear(bomber_query_results)
+        local count = broadphase.query(broadphase, from_pos, BOMBER_MAX_RANGE, bomber_query_results, enemy_side_names)
+
+        local closest
+        for i = 1, count do
+            local enemy = bomber_query_results[i]
+            if Unit.alive(enemy) then
+                local unit_data = ScriptUnit.has_extension(enemy, "unit_data_system")
+                local breed = unit_data and unit_data:breed()
+                if breed and breed.name == BOMBER_BREED then
+                    local distance = Vector3.distance(from_pos, Unit.world_position(enemy, 1))
+                    if not closest or distance < closest then
+                        closest = distance
+                    end
+                end
+            end
+        end
+
+        if not closest then return nil end
+        return 1 - math.min(closest, BOMBER_MAX_RANGE) / BOMBER_MAX_RANGE
+    end)
+
+    if ok then return scale end
+    return nil
+end
+
 -- ===== Registry =====
 -- cooldown: minimum seconds between this hook's own dispatches.
 -- interval (poll only): seconds between poll() evaluations.
@@ -89,6 +143,18 @@ local HOOKS = {
         -- 0 at no peril, 1 at max. Non-Psykers have no warp_charge
         -- component, so poll returns nil and the hook stays idle.
         poll     = function() return local_peril_fraction() end,
+    },
+    {
+        -- The breed is internally "chaos_poxwalker_bomber" but the unit's
+        -- in-game name is Poxburster (the id stays put — it's the
+        -- assignments persistence key)
+        id       = "bomber_proximity",
+        name     = "Poxburster Proximity (Continuous)",
+        kind     = "poll",
+        interval = 0.2,
+        cooldown = 0.15,
+        -- 0 at 25m, 1 point-blank; nil (wind-down) when none in range
+        poll     = function() return bomber_proximity_scale() end,
     },
     {
         id       = "on_overload",
