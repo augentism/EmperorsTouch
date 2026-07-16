@@ -1,0 +1,13 @@
+[package]
+name = "darktide-ws"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+tungstenite = { version = "0.24", features = ["native-tls"] }
+
+[profile.release]
+panic = "unwind"

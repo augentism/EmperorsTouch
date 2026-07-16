@@ -1,0 +1,12 @@
+# Shipped native companion DLLs are build artifacts (rebuilt from darktide-ws)
+*.dll
+*.pdb
+
+# Rust build output
+darktide-ws/target/
+
+# Packaged release zips (build_release.py output)
+releases/
+
+# Game console logs occasionally dropped here for analysis
+console-*.log
