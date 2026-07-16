@@ -16,7 +16,8 @@ logic/hooks.lua      -- hook registry + game wiring; calls mod:dispatch_hook(id,
 logic/dispatch.lua   -- debounce, group assigned toys by preset, batch commands
         │
         ▼
-EmperorsTouch.lua    -- make_toy_command / send_toy_command → Lovense HTTP API
+EmperorsTouch.lua    -- make_toy_command / send_toy_command → backend transport
+                        (Lovense HTTP API, et_native.dll FFI, or bridge HTTP)
 ```
 
 Users create **presets** (action strengths + timing) in the preset editor
@@ -113,9 +114,25 @@ Poll hooks need no wiring — `mod.update` (in `EmperorsTouch.lua`) walks
   pair better with a short nonzero Duration.
 - **Mission-end reset**: `mod:reset_dispatch()` clears debounce state on
   mission exit. If your hook keeps its own state, reset it there too.
-- **Testing without a device**: the Lovense Connect phone app can simulate
-  toys, but its HTTP responses are unusable directly (wrong Content-Type
-  for the game's HTTP client) — run `server.py` in the workspace root as a
-  local proxy and point `LOVENSE_URL` in `EmperorsTouch.lua` at it.
-  Production URL is `https://127-0-0-1.lovense.club:30010/command`
-  (Lovense Remote on the same PC).
+- **Testing without a device**: set the Toy Backend to
+  "Intiface / buttplug.io (native)" and add a virtual device in Intiface
+  Central — commands are visible in its device panel. (The Lovense Connect
+  phone app can also simulate toys, via the bridge's relay mode.)
+
+## Backends
+
+The `backend` setting picks the transport inside `mod:send_command`; the
+hooks/dispatch layers are transport-agnostic.
+
+- **lovense_remote** (default): HTTP to Lovense Remote on this PC
+  (`https://127-0-0-1.lovense.club:30010/command`, port fixed by the app).
+- **native**: LuaJIT FFI to `bin/et_native.dll`, an in-process buttplug.io
+  client (official `buttplug` Rust crate) talking to Intiface Central's
+  websocket (`ws://127.0.0.1:12345` by default; the `/et_ws_url` chat
+  command overrides it). The DLL emulates Lovense timeSec/loop semantics on
+  a background tokio thread; glue lives in `logic/native_backend.lua`, Rust
+  source in `et-native/`. Rebuild with `pwsh et-native/build.ps1` (runs
+  tests, stages the DLL into `bin/`). Toy ids are `bp<index>`, matching the
+  bridge, so assignments survive switching between the two.
+- **bridge**: HTTP to `bridge/bridge.py` on `localhost:20010` — kept for
+  the phone-relay use case (Lovense Connect on another device).

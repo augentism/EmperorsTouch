@@ -17,8 +17,14 @@ return {
 	backend_lovense_remote = {
 		en = "Lovense Remote (this PC)",
 	},
+	backend_native = {
+		en = "Intiface / buttplug.io (native)",
+	},
 	backend_bridge = {
-		en = "Local Bridge (Intiface / relay)",
+		en = "Local Bridge (phone relay)",
+	},
+	et_ws_url_command = {
+		en = "Show or set the Intiface websocket URL for the native backend",
 	},
 	debug_logging = {
 		en = "Debug Logging (verbose; enable when reporting issues)",

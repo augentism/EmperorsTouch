@@ -1,9 +1,9 @@
-# Shipped native companion DLLs are build artifacts (rebuilt from darktide-ws)
+# Shipped native companion DLLs are build artifacts (rebuilt from et-native)
 *.dll
 *.pdb
 
 # Rust build output
-darktide-ws/target/
+et-native/target/
 
 # Packaged release zips (build_release.py output)
 releases/

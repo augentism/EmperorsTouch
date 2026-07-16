@@ -1,11 +1,13 @@
 local mod = get_mod("EmperorsTouch")
 
 mod:io_dofile("EmperorsTouch/scripts/mods/EmperorsTouch/libs/json")
+local native = mod:io_dofile("EmperorsTouch/scripts/mods/EmperorsTouch/logic/native_backend")
 
 local VIEW_NAME = "emperors_touch_view"
 
 -- Both ports are fixed: Lovense Remote always serves on 30010, and the
--- bridge always listens on 20010 (bridge/bridge.py matches).
+-- bridge always listens on 20010 (bridge/bridge.py matches). The native
+-- backend doesn't use HTTP at all (FFI to et_native.dll).
 local function lovense_url()
     if mod:get("backend") == "bridge" then
         return "http://localhost:20010/command"
@@ -122,6 +124,26 @@ end
 -- Sends a command table to the Lovense API. on_done(body, err) is called
 -- with the decoded response body, or nil + error message.
 function mod:send_command(command_table, on_done)
+    -- Native backend: no HTTP — commands go straight to et_native.dll,
+    -- which owns the Intiface websocket on a background thread. Responses
+    -- are synthesized in the same Lovense body shape (code 200/402) so
+    -- every caller (get_toys, send_toy_command) works unchanged.
+    if mod:get("backend") == "native" then
+        mod:debug_log("FFI " .. describe_command(command_table))
+        if command_table.command == "GetToys" then
+            local body, err = native.get_toys_body()
+            on_done(body, err)
+        else
+            local ok, err = native.command(command_table)
+            if ok then
+                on_done({ code = 200, type = "OK" }, nil)
+            else
+                on_done(nil, err)
+            end
+        end
+        return
+    end
+
     mod:debug_log("POST " .. describe_command(command_table))
     Managers.backend:url_request(lovense_url(), {
         method = "POST",
@@ -459,6 +481,27 @@ end
 
 -- ===== Stop-all keybind =====
 
+-- Intiface websocket URL for the native backend. No UI field (DMF has no
+-- free-text widget); power users whose Intiface listens on a non-default
+-- port set it here. Persisted like any other mod setting.
+mod:command("et_ws_url", mod:localize("et_ws_url_command"), function(url)
+    if not url or url == "" then
+        mod:echo(string.format(
+            "Native backend websocket URL: %s (default %s). Usage: /et_ws_url ws://host:port",
+            native.ws_url(), "ws://127.0.0.1:12345"))
+        return
+    end
+    if not (url:find("^ws://") or url:find("^wss://")) then
+        mod:echo("Not a websocket URL (must start with ws://): " .. tostring(url))
+        return
+    end
+    mod:set("native_ws_url", url)
+    if mod:get("backend") == "native" then
+        native.ensure_connected()   -- retargets the running connection
+    end
+    mod:echo("Native backend websocket URL set to " .. url)
+end)
+
 -- Stops every action on all connected toys (no toy field = all toys).
 mod.emperors_touch_stop_all = function(self)
     mod:send_toy_command(mod:make_stop_command(), function(ok, err)
@@ -468,6 +511,15 @@ mod.emperors_touch_stop_all = function(self)
             mod:echo("Stop failed: " .. tostring(err))
         end
     end)
+end
+
+-- Switching away from the native backend: stop devices and drop the
+-- Intiface connection (the DLL would otherwise keep it alive). Switching
+-- TO it connects lazily on the next command/GetToys.
+function mod.on_setting_changed(setting_id)
+    if setting_id == "backend" and mod:get("backend") ~= "native" then
+        native.disconnect()
+    end
 end
 
 -- https://dmf-docs.darkti.de

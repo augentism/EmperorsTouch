@@ -1,6 +1,7 @@
 --[[
-    Minimal JSON decoder (decode only).
-    Used to parse the double-encoded "toys" string from the Lovense API.
+    Minimal JSON decoder + encoder.
+    decode: parses the double-encoded "toys" string from the Lovense API.
+    encode: serializes command tables for the native (FFI) backend.
 --]]
 
 local mod = get_mod("EmperorsTouch")
@@ -115,6 +116,54 @@ json.decode = function(s)
         local v = decode_value(s, skip_ws(s, 1))
         return v
     end)
+    if ok then return result end
+    return nil, result
+end
+
+local encode_value
+
+local ESCAPES = {
+    ['"'] = '\\"', ["\\"] = "\\\\", ["\n"] = "\\n",
+    ["\r"] = "\\r", ["\t"] = "\\t", ["\b"] = "\\b", ["\f"] = "\\f",
+}
+
+local function encode_string(s)
+    return '"' .. s:gsub('[%z\1-\31"\\]', function(c)
+        return ESCAPES[c] or string.format("\\u%04x", c:byte())
+    end) .. '"'
+end
+
+encode_value = function(v)
+    local t = type(v)
+    if t == "string" then return encode_string(v) end
+    if t == "number" then
+        if v ~= v or v == math.huge or v == -math.huge then
+            error("cannot encode non-finite number")
+        end
+        -- %.14g round-trips integers cleanly and avoids float noise
+        return string.format("%.14g", v)
+    end
+    if t == "boolean" then return tostring(v) end
+    if t == "table" then
+        -- Array if [1] is set (command tables never mix array/hash parts)
+        if v[1] ~= nil then
+            local parts = {}
+            for i = 1, #v do parts[i] = encode_value(v[i]) end
+            return "[" .. table.concat(parts, ",") .. "]"
+        end
+        local parts = {}
+        for key, val in pairs(v) do
+            if type(key) ~= "string" then error("object keys must be strings") end
+            parts[#parts + 1] = encode_string(key) .. ":" .. encode_value(val)
+        end
+        return "{" .. table.concat(parts, ",") .. "}"
+    end
+    error("cannot encode type " .. t)
+end
+
+-- Returns JSON string, or nil + error message
+json.encode = function(value)
+    local ok, result = pcall(encode_value, value)
     if ok then return result end
     return nil, result
 end

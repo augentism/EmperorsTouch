@@ -12,6 +12,7 @@ return {
 				default_value = "lovense_remote",
 				options       = {
 					{ text = "backend_lovense_remote", value = "lovense_remote" },
+					{ text = "backend_native",         value = "native" },
 					{ text = "backend_bridge",         value = "bridge" },
 				},
 			},
